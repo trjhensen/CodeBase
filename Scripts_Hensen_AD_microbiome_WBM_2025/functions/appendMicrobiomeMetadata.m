@@ -39,5 +39,5 @@ mergedMetadata = outerjoin(metadata,microbiomeMD,'Keys','ID','MergeKeys',true,'T
 
 % Convert date variables from cell strings to date times
 mergedMetadata = convertvars(mergedMetadata,{'collection_date','accession_date'},@(x) datetime(x,'InputFormat', 'M/dd/yy'));
-
+mergedMetadata = convertvars(mergedMetadata,'age_at_collection',@str2double);
 end

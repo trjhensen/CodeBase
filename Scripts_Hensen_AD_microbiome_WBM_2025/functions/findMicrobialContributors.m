@@ -10,6 +10,7 @@ rng(1, "twister")
 % Extract the function parameters
 rxnsOfInterest = param.rxnsOfInterest;
 bootSamp = param.bootSamp;
+enBoot = param.enBoot;
 minFreq = param.minFreq;
 nBootLasso = param.nBootLasso;
 
@@ -25,6 +26,7 @@ if isempty(poolobj); parpool(numRxns); end
 
 % Perform bootstrap analysis on all rxnsOfInterest
 bootMeanTables = cell(1,numRxns);
+disp('Shadow price analysis')
 parfor i = 1:numRxns
     bootMeanTables{i} = getMicrobeSensitivity(mContributionDir, rxnsOfInterest{i}, bootSamp);
 end
@@ -95,6 +97,7 @@ microbeContributionStats{1} = getMeanSDNumMicrobes(fluxMicrobeData);
 fluxMicrobeData = cellfun(@(x) removevars(x,'ID'), fluxMicrobeData,'UniformOutput',false); 
 
 % Find subset of microbial species that predict the associated fluxes
+disp('Feature selection')
 lassoRes = pruneMicrobialFeaturesWithLasso(fluxMicrobeData, nBootLasso);
 
 % Create table for output
@@ -116,23 +119,27 @@ fluxMicrobeData = cellfun(pruneMicrobes,fluxMicrobeData, microbeNames ,microbesT
 
 % Get the number of microbial contributors again after lasso-based pruning
 microbeContributionStats{2} = getMeanSDNumMicrobes(fluxMicrobeData);
-
+%%
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%% Feature importance calculation
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 % Identify relevant features
-[enetTab, elasticNetStats] = elasticNetMicrobeWeights(fluxMicrobeData);
+[enetTab, elasticNetStats] = elasticNetMicrobeWeights(fluxMicrobeData, enBoot);
+
+elasticNetResults = vertcat(enetTab{:});
+elasticNetResults = renamevars(elasticNetResults,'Metabolite','Reaction');
+elasticNetResults = addvars(elasticNetResults, renameAdrcVmhToMetName(elasticNetResults.Reaction),'NewVariableNames','Metabolite','After','Reaction');
 
 % Convert elastic net results to wide table with coefficients for each
 % flux-microbe association
-enetTabWide = unstack(vertcat(enetTab{:}),'Beta','Metabolite','VariableNamingRule','preserve');
-enetTabWide(:,2:end) = fillmissing(enetTabWide(:,2:end),'constant',0);
-elasticNetResults = enetTabWide;
+% enetTabWide = unstack(vertcat(enetTab{:}),'Beta','Metabolite','VariableNamingRule','preserve');
+% enetTabWide(:,2:end) = fillmissing(enetTabWide(:,2:end),'constant',0);
+% elasticNetResults = enetTabWide;
 
 % Convert VMH IDs to metabolite names
-elasticNetResults.Properties.VariableNames(2:end) = renameAdrcVmhToMetName(elasticNetResults.Properties.VariableNames(2:end));
+% elasticNetResults.Properties.VariableNames(2:end) = renameAdrcVmhToMetName(elasticNetResults.Properties.VariableNames(2:end));
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -326,7 +333,7 @@ meanSdNumMicrobesForMets = array2table(meanSdForMets,'VariableNames',{'Total','M
 end
 
 
-function [enetTab, enet_stats] = elasticNetMicrobeWeights(fluxMicrobeData)
+function [enetTab, enet_stats] = elasticNetMicrobeWeights(fluxMicrobeData, enBoot)
 % This function finds the weight coefficients of microbial species for flux
 % predictions using elastic net regression
 
@@ -355,17 +362,16 @@ enetTab = cellfun(@(x,y) table(x, y', zeros(length(y'),1),'VariableNames',{'Meta
 
 % Preallocate table with summary statistics
 numMets = length(metNames);
-varNames = {'MSE','R2','DoF','Alpha','minLambda'};
-enet_stats = array2table(zeros(numMets,length(varNames)),'VariableNames',varNames,'RowNames',string(metNames)');
+varNames = {'MSE','RMSE', 'SST', 'SSR','R2','DoF','Alpha','minLambda'};
+% enet_stats = array2table(zeros(numMets,length(varNames)),'VariableNames',varNames,'RowNames',string(metNames)');
 
-% Populate alpha variable
-enet_stats.Alpha = repmat(alpha,height(enet_stats),1);
+enet_stats = cellfun(@(x) array2table(zeros(1,length(varNames)),'VariableNames',varNames,'RowNames',x), metNames, 'UniformOutput',false);
 
 % Warm up algorithm
 lasso(predictors{1}, responses{1}, 'CV',10,'Intercept',false,'Standardize',false,'Alpha',alpha);
 lasso(predictors{2}, responses{2}, 'CV',10,'Intercept',false,'Standardize',false,'Alpha',alpha);
 
-for i=1:numMets
+parfor i=1:numMets
     % Get predictor and response vars for metabolite i
     pred = predictors{i};
     resp = responses{i};
@@ -374,24 +380,85 @@ for i=1:numMets
     nanSamples = isnan(resp);
     y = resp(~nanSamples);
     X = pred(~nanSamples,:);
-    
-    % Perform lasso regression on random sample
-    [b,lStat] = lasso(X, y, 'CV',10,'Intercept',false,'Standardize',false,'Alpha',alpha); % Data is already normalized
-    
-    % Find the coefficients for each microbe and add them to the table
-    coef = b(:, lStat.IndexMinMSE);
-    enetTab{i}.Beta = coef;
-    
-    % Populate statistics table
-    enet_stats.MSE(i) = lStat.MSE(lStat.IndexMinMSE); % MSE
-    enet_stats.DoF(i) = lStat.DF(lStat.IndexMinMSE); % Degrees of freedom
-    enet_stats.minLambda(i) = lStat.LambdaMinMSE;
-    
-    % Add the R2 value
-    y_pred = X * coef + lStat.Intercept(lStat.IndexMinMSE); % Predict using the selected coefficients and intercept
-    SST = sum((y - mean(y)).^2);         % total sum of squares (SST) in y
-    SSR = sum((y - y_pred).^2);          % residual sum of squares (SSR) variance
-    enet_stats.R2(i) = 1 - SSR / SST;   % R2
+
+    if 1 
+        [coef, se, ci, t_stat, p_val, MSE, DF, LambdaMinMSE, SST, SSR, R2] = perfBootEnet(X, y , enBoot);
+
+        % Add regression statistics
+        enetTab{i}.Beta = coef;
+        enetTab{i} = addvars(enetTab{i}, ci(:,1), ci(:,2), se, t_stat, p_val,  repmat(enBoot, length(coef),1), 'NewVariableNames', {'2.5% CI','97.5% CI', 'SE','tStat','pVal','enBoot'});
+
+        enet_stats{i}{1,:} = [MSE, sqrt(MSE), SST, SSR, R2, DF, alpha, LambdaMinMSE];
+        % enet_stats.DoF(i) = DF; % Degrees of freedom
+        % enet_stats.minLambda(i) = LambdaMinMSE;
+        % enet_stats.R2(i) = R2;
+    else 
+        % Perform lasso regression on random sample
+        % [b,lStat] = lasso(X, y, 'CV',10,'Intercept',false,'Standardize',false,'Alpha',alpha); % Data is already normalized
+        % 
+        % % Find the coefficients for each microbe and add them to the table
+        % coef = b(:, lStat.IndexMinMSE);
+        % enetTab{i}.Beta = coef;
+        % 
+        % % Populate statistics table
+        % enet_stats.MSE(i) = lStat.MSE(lStat.IndexMinMSE); % MSE
+        % enet_stats.DoF(i) = lStat.DF(lStat.IndexMinMSE); % Degrees of freedom
+        % enet_stats.minLambda(i) = lStat.LambdaMinMSE;
+        % 
+        % % Add the R2 value
+        % y_pred = X * coef + lStat.Intercept(lStat.IndexMinMSE); % Predict using the selected coefficients and intercept
+        % SST = sum((y - mean(y)).^2);         % total sum of squares (SST) in y
+        % SSR = sum((y - y_pred).^2);          % residual sum of squares (SSR) variance
+        % enet_stats.R2(i) = 1 - SSR / SST;   % R2
+    end
 end
 
+enet_stats = vertcat(enet_stats{:});
+
+% Populate alpha variable
+% enet_stats.Alpha = repmat(alpha,height(enet_stats),1);
+
+end
+
+function [coef, se, ci, t_stat, p_val, MSE, DF, LambdaMinMSE, SST, SSR, R2] = perfBootEnet(X, y , enBoot)
+% Perform bootstrapped elastic net regressions
+
+
+% Preallocate matrices
+n = length(y);
+bootCoefs = zeros(size(X,2), enBoot);
+regStats = zeros(enBoot,4);
+
+% Generate bootstrap samples
+rsampIdx = arrayfun(@(x) randsample(n, round(1*n,0),true), 1:enBoot, 'UniformOutput', false);
+X_sub = cellfun(@(x) X(x, :), rsampIdx,'UniformOutput', false);
+y_sub = cellfun(@(x) y(x, :), rsampIdx,'UniformOutput', false);
+
+fprintf('Bootstrapping...');
+for i = 1:enBoot
+    % Run Elastic Net on bootstrap sample
+    [b, stat] = lasso(X_sub{i}, y_sub{i}, 'CV',10,'Intercept',false,'Standardize',false,'Alpha',0.5); 
+    bootCoefs(:,i) = b(:, stat.IndexMinMSE);
+    regStats(i,:) = [stat.Intercept(stat.IndexMinMSE), stat.DF(stat.IndexMinMSE), stat.MSE(stat.IndexMinMSE), stat.LambdaMinMSE];
+end
+fprintf('Done.\n');
+
+% --- Calculate Statistics ---
+DF = mean(regStats(:,2));
+MSE = mean(regStats(:,3));
+LambdaMinMSE = mean(regStats(:,4));
+
+% Calculate the R2 value
+coef = mean(bootCoefs,2);
+y_pred = X * coef;                   % Predict using the selected coefficients and intercept
+SST = sum((y - mean(y)).^2);         % total sum of squares (SST) in y
+SSR = sum((y - y_pred).^2);          % residual sum of squares (SSR) variance
+R2 = 1 - SSR / SST;                  % R2
+
+se = std(bootCoefs, 0, 2);                      % Standard Error
+ci = prctile(bootCoefs, [2.5 97.5], 2);         % 95% CI Lower
+t_stat = coef ./ se;                            % T-statistic (approximate)
+
+% P-value: Proportion of times the bootstrap coef is 0 (or crosses zero)
+p_val = 2 * min(mean(bootCoefs > 0, 2), mean(bootCoefs < 0, 2));
 end

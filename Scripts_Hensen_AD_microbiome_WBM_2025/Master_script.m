@@ -12,6 +12,11 @@
 % put the inputs in a folder "input" under the project directory.
 
 clear;clc;
+addpath(genpath('/home/tim/Documents/CodeBase'))
+addpath(genpath('/home/tim/Documents/ADRC/'))
+addpath(genpath('/home/tim/Documents/cobratoolbox'))
+addpath(genpath('/home/tim/Documents/wbm_modelingcode'))
+
 
 % Set paths for analysis
 paths = struct;
@@ -29,20 +34,21 @@ paths.microbiome = fullfile(paths.inputs,'microbiome');
 paths.unprocessedMicrobes = fullfile(paths.microbiome,'unprocessed');
 paths.processedMicrobes = fullfile(paths.microbiome,'processed');
 
-% Find current folders and remove all outputs except for the modelling data
-foldersToRm = setdiff({dir(paths.outputs).name}, {'Knirps','ResultMARS','ResultMARS_NEW','resultMgPipe','Sneezy','logFile_initialisation.txt','.','..'});
-foldersToRm = fullfile(paths.outputs,foldersToRm); % Generate paths
-
-for i = 1:length(foldersToRm)
-    if isfolder(foldersToRm{i})
-        rmdir(foldersToRm{i}, 's') % Remove previous outputs
-        mkdir(foldersToRm{i}) % Create new empty folders
+if 0 
+    % Find current folders and remove all outputs except for the modelling data
+    foldersToRm = setdiff({dir(paths.outputs).name}, {'Knirps','ResultMARS','ResultMARS_NEW','resultMgPipe','Sneezy','logFile_initialisation.txt','.','..'});
+    foldersToRm = fullfile(paths.outputs,foldersToRm); % Generate paths
+    
+    for i = 1:length(foldersToRm)
+        if isfolder(foldersToRm{i})
+            rmdir(foldersToRm{i}, 's') % Remove previous outputs
+            mkdir(foldersToRm{i}) % Create new empty folders
+        end
     end
+    
+    % Make sure that the core output folders exist
+    cellfun(@mkdir, {paths.figures,paths.fluxes,paths.microbetoflux}); 
 end
-
-% Make sure that the core output folders exist
-cellfun(@mkdir, {paths.figures,paths.fluxes,paths.microbetoflux}); 
-
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%%%%%%%%%%%%%%%%% Metagenomic read count mapping %%%%%%%%%$%%%%%%%%%%%%%%
@@ -102,7 +108,7 @@ metadataOutputFolder = paths.metadataOutputFolder;
 metadata = processMetadataADRC(paths.metadata, paths.Mars.inputTable);
 
 % Add cognitive score information
-createFig = true;
+createFig = false;
 metadataCog = appendGlobalCognitionMetadata(metadata, metadataOutputFolder, createFig);
 
 % Add metadata from microbiome samples
@@ -119,15 +125,24 @@ metadataMars = appendMappingStatsMetadata(metadataDiversities, outputPathMars);
 metadataTechCov = appendTechnicalCovariatesMetadata(metadataMars, microbiomeInputFolder);
 % Technical covariate analysis: adrcTechnicalCovariateAnalysis
 
+% Remove samples with multiple timepoints and samples without dementia
+% information
+metadataProcessed = rmAdrcOverlapAndMissing(metadataTechCov);
+
+if 0 
+    [tbl,chi2,p,labels] = crosstab(metadataProcessed.NACCUDSD,metadataProcessed.NACCALZD);
+    tbl = array2table(tbl,"RowNames",labels(:,1), "VariableNames",labels(1:3,2)')
+end
+
 % Remove low quality samples (Check IBD status, alcohol intake, pain
 % medication, smoking, mood disorders, Intestinal inflammation, sleep-aid
 % medication. Remove samples if almost non of the
 % individuals have a yes for these metadata.)
-[metadataPruned, prunedMetadataPath, metadataIntermedPruning] = pruneMetadataADRC(metadataTechCov, metadataOutputFolder);
+[metadataPruned, prunedMetadataPath, metadataIntermedPruning] = pruneMetadataADRC(metadataProcessed, metadataOutputFolder);
 paths.metadata = prunedMetadataPath;
 
 summaryStats = makeADRCmetadataTable(metadataPruned);
-%%
+
 % Describe the effects of metagenomic mapping the gut microbiome relative abundances
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -153,7 +168,7 @@ summaryStats = makeADRCmetadataTable(metadataPruned);
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%%%%%%%%%%%%%%%%%%%%% Processing of FBA solutions %%%%%%%%%%%%%%%%%%%%%%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%%
+
 % Clean up workspace
 clearvars -except paths; clc;
 
@@ -163,7 +178,7 @@ paths.FBA  = fullfile(paths.outputs,'fluxes','FBA');
 paths.fluxAnalysis = fullfile(paths.fluxes,'analysis');
 
 % Move FBA results from the two dwarfs to a shared folder 
-if ~isfolder(paths.FBA); OK = moveAdrcFbaRes(paths.outputs,paths.FBA); end
+if ~isfolder(paths.FBA); OK = moveAdrcFbaRes(paths.root,paths.FBA); end
 
 if ~isfolder(paths.fluxAnalysis)
     % Create new folder if not present yet
@@ -172,12 +187,14 @@ if ~isfolder(paths.fluxAnalysis)
     % Next, the parameters for flux processing are set. Metabolites for which a
     % solution could be found in 5% of samples or less are removed.
     paramFluxProcessing.rxnRemovalCutoff = {'fraction',  0.05};
-    paramFluxProcessing.fluxMicrobeCorrelationMetric = 'spearman_rho';
+    % paramFluxProcessing.fluxMicrobeCorrelationMetric = 'spearman_rho';
 
     % Process flux results
-    analyseWBMsol(paths.FBA,paramFluxProcessing, paths.fluxAnalysis);
+    analyseGF = false;
+    analyseWBMsol(paths.FBA,paramFluxProcessing, paths.fluxAnalysis,analyseGF);
 
     % Calculate microbe to flux contributon potentials; 
+    disp('Extract microbial abundances and shadow prices')
     extractMicrobeContributionsADRC(paths.FBA, paths.fluxAnalysis);
 end
 
@@ -191,7 +208,7 @@ paths.fluxPath = fullfile(paths.fluxes,'analysis','processed_fluxes.csv');
 paths.rawMetabolonPath = fullfile(paths.inputs,'metabolomics','ADRC Metabolon Preprocessed Unblinded 05102024.xlsx'); % Metabolon samples
 rxnsToMap = readcell(paths.fluxPath,'Range','1C:1ZZZ');
 [~,paths.metabolonPath] = appendMetabolonToMetada(rxnsToMap, paths.rawMetabolonPath, paths.metadata, paths.outputs);
-%%
+
 % Now, we will test how well the fluxes of the selected metabolites can
 % explain the metabolomic measurements.
 fluxPath = paths.fluxPath;
@@ -200,6 +217,14 @@ metadataPath = paths.metadata;
 saveDir = paths.fluxes;
 [~, ~] = fluxMetabolonCorr(paths.fluxPath,paths.metabolonPath,paths.metadata, paths.fluxes); % Flux-metabolome correlation analysis
 
+% Correlate all flux predictions with the metabolomics abundances
+[RHOTab, RHOsigTab, pValTab] = fluxMetabolonCorr2(fluxPath,metabolonPath);
+
+% save results
+fileName = fullfile(saveDir,'flux_metabolon_corr_2.xlsx');
+
+cellfun(@(x,y) writetable(x,fileName,'Sheet',y,'WriteRowNames',true), {RHOTab, RHOsigTab, pValTab}, {'RHO','SigCorr','pVals'});
+%%
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%% Flux outlier removal %%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -219,6 +244,7 @@ close all; [sampleImportanceTable, explVar] = sampleOutliersInFluxesADRC(paths.f
 [paths.metadata, metadata] = pruneFluxOutliersFromMetadataADRC(sampleImportanceTable,paths.metadata,2); % Remove the top 2 outliers in the fluxes
 
 % Generate metadata summary file
+
 
 % Columns: Variable, N, CN (N=), MCI (N=), Dementia (N=)
 % Rows: AD diagnosis, Age, Sex female, no. (%), Education in years, BMI,
@@ -244,7 +270,6 @@ summaryStatsPlasma = makeADRCmetadataTable(metadataPlasma);
 writetable(summaryStatsPlasma,fullfile(paths.metadataOutputFolder,'metadataPlasmaSummaryStats.xlsx'),'WriteRowNames',false,'WriteMode','replacefile')
 
 
-%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%%%%%%%%%%%%%%%%%%% Differential flux analysis %%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -441,9 +466,11 @@ paths.rxnsOfInterest = paths.adRxnsOfInterest;%unique(vertcat(paths.adRxnsOfInte
 % for the flux results
 param = struct;
 param.rxnsOfInterest = paths.rxnsOfInterest;
-param.bootSamp = 10000; % Boot samples for obtaining the mean and 95%CI of microbe contribution potentials
+param.bootSamp = 1e4; % Boot samples for obtaining the mean and 95%CI of microbe contribution potentials
 param.minFreq = 0.9;
 param.nBootLasso = 500;
+param.enBoot = 1e5; % Elastic net bootstrap samples 
+
 paths.shadowPriceDir = fullfile(paths.fluxAnalysis,'biomass_shadow_prices'); % Folder with pan microbe biomass shadow prices 
 shadowPriceDir = paths.shadowPriceDir;
 fluxPath = paths.fluxPath;
@@ -452,6 +479,8 @@ saveDir = paths.microbetoflux;
 
 % Start parallel pool if needed
 poolobj = gcp('nocreate'); if isempty(poolobj); parpool(feature('numCores')); end
+
+mContributionDir = shadowPriceDir;
 
 % Find the associated microbial contributors to the fluxes
 tic

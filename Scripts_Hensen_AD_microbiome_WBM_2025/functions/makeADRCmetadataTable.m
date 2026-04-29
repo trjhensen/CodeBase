@@ -28,8 +28,8 @@ end
 %metadata = metadata(~matches(metadata.NACCUDSD,'<undefined>'),:);
 
 % Generate binary variables
-metadata.Sex = matches(metadata.Sex,"female");
-metadata.APOE_E4 = matches(metadata.APOE_E4,"E4");
+metadata.Sex = matches(string(metadata.Sex),"female");
+metadata.APOE_E4 = matches(string(metadata.APOE_E4),"E4");
 % metadata.AD = matches(metadata.AD,"AD");
 binaryVars = {'Sex','DAILY_ALCOHOL','HYPERT','NPS'};
 metadata = convertvars(metadata,binaryVars,'logical');
