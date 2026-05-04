@@ -17,6 +17,7 @@ addpath(genpath('/home/tim/Documents/ADRC/'))
 addpath(genpath('/home/tim/Documents/cobratoolbox'))
 addpath(genpath('/home/tim/Documents/wbm_modelingcode'))
 
+% ADRC_stats_sketch.m
 
 % Set paths for analysis
 paths = struct;
@@ -141,6 +142,8 @@ end
 [metadataPruned, prunedMetadataPath, metadataIntermedPruning] = pruneMetadataADRC(metadataProcessed, metadataOutputFolder);
 paths.metadata = prunedMetadataPath;
 
+
+metadata = metadataPruned;
 summaryStats = makeADRCmetadataTable(metadataPruned);
 
 % Describe the effects of metagenomic mapping the gut microbiome relative abundances
@@ -168,7 +171,7 @@ summaryStats = makeADRCmetadataTable(metadataPruned);
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%%%%%%%%%%%%%%%%%%%%% Processing of FBA solutions %%%%%%%%%%%%%%%%%%%%%%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
+%%
 % Clean up workspace
 clearvars -except paths; clc;
 
@@ -196,6 +199,27 @@ if ~isfolder(paths.fluxAnalysis)
     % Calculate microbe to flux contributon potentials; 
     disp('Extract microbial abundances and shadow prices')
     extractMicrobeContributionsADRC(paths.FBA, paths.fluxAnalysis);
+
+    fbaDir = paths.FBA;
+    saveDir = paths.fluxes;
+    bootSamp = 10000;
+
+    poolobj = gcp('nocreate');
+    if isempty(poolobj); parpool(feature('numCores')); end
+
+    % Extract diet reaction reduced cost values
+    disp('Extract diet reaction reduced cost values')
+    tic
+    dietSensFolder = getDietSensitivity(fbaDir, saveDir);
+    toc
+    % Calculate the mean average reduced cost value and 95% CI using
+    % bootstrapping
+    disp('Calculate the bootstrapped mean average reduced cost for each objective and diet reaction')
+    tic
+    bootMeanTable = getDietRCstats(dietSensFolder, bootSamp);
+    toc
+    paths.dietSensStats = fullfile(paths.fluxes,'diet_redCost_sampleMean_stats.csv');
+    writetable(bootMeanTable, paths.dietSensStats) % Write results to file
 end
 
 % Add paths to the paths variable as inputs for further processing of the
@@ -215,14 +239,14 @@ fluxPath = paths.fluxPath;
 metabolonPath = paths.metabolonPath;
 metadataPath = paths.metadata;
 saveDir = paths.fluxes;
-[~, ~] = fluxMetabolonCorr(paths.fluxPath,paths.metabolonPath,paths.metadata, paths.fluxes); % Flux-metabolome correlation analysis
-
+if 0
+    [~, ~] = fluxMetabolonCorr(paths.fluxPath,paths.metabolonPath,paths.metadata, paths.fluxes); % Flux-metabolome correlation analysis
+end
 % Correlate all flux predictions with the metabolomics abundances
 [RHOTab, RHOsigTab, pValTab] = fluxMetabolonCorr2(fluxPath,metabolonPath);
 
 % save results
 fileName = fullfile(saveDir,'flux_metabolon_corr_2.xlsx');
-
 cellfun(@(x,y) writetable(x,fileName,'Sheet',y,'WriteRowNames',true), {RHOTab, RHOsigTab, pValTab}, {'RHO','SigCorr','pVals'});
 %%
 
@@ -269,7 +293,7 @@ summaryStatsPlasma = makeADRCmetadataTable(metadataPlasma);
 % Write table to file
 writetable(summaryStatsPlasma,fullfile(paths.metadataOutputFolder,'metadataPlasmaSummaryStats.xlsx'),'WriteRowNames',false,'WriteMode','replacefile')
 
-
+%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%%%%%%%%%%%%%%%%%%% Differential flux analysis %%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -305,9 +329,31 @@ end
 [preparedInputTable, preparedMetadata] = prepareDataForStatsADRC(paths.fluxPath, paths.metadata,false);
 %preparedMetadata.(param.response) = renamecats( preparedMetadata.(param.response) ,dementiaCats,{'Healthy controls','MCI','AD dementia'});
 
-
 % State confounders
 paths.adConfounders = {'Sex','age_at_collection','mapped_species_reads','lane','Ethanol_added'};
+
+if 1
+    % dchacSampsToRm = {'X42510869','X42754461','X42547915','X4262232'};
+   dchacSampsToRm =  {'X4273975'
+'X42409516'
+'X42562933'
+'X42808065'
+'X42487528'
+'X42373971'};
+    preparedInputTable(matches(preparedInputTable.ID,dchacSampsToRm),:)=[];
+    paths.adConfounders = {'Sex','age_at_collection','NACCBMI','EDUC','APOE_E4','lane','mapped_species_reads','Ethanol_added'}; 
+
+    % % Define regression formula
+    % confounders = {'Sex','age_at_collection','mapped_species_reads','lane','Ethanol_added'};
+    % form = strcat("AD ~ Flux + ", strjoin(confounders,'+') );
+    % 
+    % newCov = {'NACCBMI','EDUC','APOE_E4'};
+    % form1 = append(form, '+', newCov, ' + Flux:',newCov);
+    % form1 = append(form, '+', newCov);
+    % 
+    % confounderInfluence = cellfun(@(x) performRegressions(preparedInputTable, preparedMetadata,x), form1,'UniformOutput',false);
+
+end
 
 % Perform analysis
 [results_AD, paths.adRxnsOfInterest, results_DM, regressions_DM] = alzheimerAnalysis(preparedInputTable,preparedMetadata,'Flux',paths.adConfounders);
@@ -332,7 +378,7 @@ preparedMetadata.(param.response) = categorical(preparedMetadata.(param.response
 fig = figure('Position',[39,457/3,1878,421*2]);
 tiledlayout(2,length(paths.dementiaRxnsOfInterest),'TileSpacing','tight','Padding','loose');
 createMultipleBoxPlotsADRC(preparedInputTable, preparedMetadata, paths.dementiaRxnsOfInterest, results_DM, param);
-
+%%
 
 % Generate paths to save results
 adRegTabPath = fullfile(paths.AD,'AD_progression_results.xlsx');

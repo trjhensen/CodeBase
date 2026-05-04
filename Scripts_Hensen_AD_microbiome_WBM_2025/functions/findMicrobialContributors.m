@@ -1,8 +1,53 @@
 function [elasticNetResults, elasticNetStats, lassoResTab, microbeContributionStats] = findMicrobialContributors(mContributionDir, fluxPath, mappedMicrobePath, saveDir, param)
-
 % findMicrobialContributors:
 % Cleaned up version of microbeToFluxPipeline with only the parts
 % necessary for its functioning.
+%
+% INPUTS:
+% shadowPriceDir            Path to the directory with the microbial
+%                           biomass shadow prices associated with the flux 
+%                           predictions
+% fluxPath                  Path to the file with processed flux
+%                           predictions.
+% mappedMicrobePath         Path to the relative abundance table of all
+%                           microbial taxa in each model.
+% param
+% .rxnsOfInterest.          List of reactions to investigate
+% .bootSamp                 Number of bootstrap samples to calculate the
+%                           95% confidence interval around the shadow price 
+%                           mean averages.
+% .nBootLasso               Number of bootstrap samples for the lasso
+%                           stability selection 
+% .minFreq                  Minimal lasso stability selection frequency for
+%                           further analysis.
+% .enBoot                   Number of bootstrapped samples for the elastic
+%                           net regressions. This parameter is used to
+%                           generate regression statistics for each of the
+%                           predicted coefficients, including 95%
+%                           confidence intervals, standard errors,
+%                           t-values, and p-values.
+% saveDir                   Path to the directory where all result tables
+%                           will be saved.
+%
+% 
+% OUTPUTS:
+% elasticNetResults         Elastic net regression coefficients of the
+%                           microbial predictors for the associated flux
+%                           predictions.
+% elasticNetStats           Summary statistics of the elastic net
+%                           regression model fit
+% lassoResTab               Selection frequency of each predictor variable,
+%                           e.g., microbial taxa, in the bootstrapped lasso
+%                           regressions. The selection frequency is defined
+%                           as the fraction of bootstrap samples for which
+%                           a non-zero coefficient was obtained by the
+%                           lasso regression. 
+% microbeshadowpriceStats   Table with the mean average and bootstrapped
+%                           95% confidence intervals of the flux-associated 
+%                           shadow prices of microbial taxa in the model.
+%
+% Author:
+%       Tim Hensen, July 2025-April 2026
 
 % Set random number generator for reproducible results
 rng(1, "twister")
