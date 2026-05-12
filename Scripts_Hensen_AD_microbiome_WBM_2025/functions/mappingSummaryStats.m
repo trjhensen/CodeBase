@@ -1,4 +1,4 @@
-function diversityStats = mappingSummaryStats(paths)
+function diversityStats = mappingSummaryStats(preMappedPath, microbiotaWbmPathFilt, metadataPath)
 % Aim: Calculate the species richness, read counts, and pielou evennes
 % index. 
 % input:
@@ -8,23 +8,22 @@ function diversityStats = mappingSummaryStats(paths)
 % diversityStats.
 
 % inputs:
-mappingPaths.preMappedPath = fullfile(paths.outputs,'resultMARS', 'normalized_preMapped','normalized_preMapped_species.csv');
-mappingPaths.mappedPath = fullfile(paths.outputs,'fluxes', 'analysis','WBM_relative_abundances.csv');
+mappingPaths = struct('preMappedPath',preMappedPath,'microbiotaWbmPathFilt',microbiotaWbmPathFilt);
 
 % Load the pre-mapped, mapped present, and mapped absent abundance data
 microbiomes = structfun(@(x) readtable(x),mappingPaths,'UniformOutput',false);
 
 % Prepare the WBM relative abundance data for further analysis
-wbmAbundances = microbiomes.mappedPath;
+wbmAbundances = microbiomes.microbiotaWbmPathFilt;
 wbmAbundances(:,2:end) = fillmissing(wbmAbundances(:,2:end),'constant',0);
 wbmAbundances.Properties.RowNames = erase(wbmAbundances.Row,{'_female','_male','mWBM_'});
 wbmAbundances.Row = [];
 wbmAbundances = rows2vars(wbmAbundances);
 wbmAbundances = renamevars(wbmAbundances,'OriginalVariableNames','Taxon');
-microbiomes.mappedPath = wbmAbundances;
+microbiomes.microbiotaWbmPathFilt = wbmAbundances;
 
 % Load the metadata
-metadata = readtable(paths.metadata,'VariableNamingRule','preserve');
+metadata = readtable(metadataPath,'VariableNamingRule','preserve');
 
 % Remove samples not in the metadata table
 rmVarFun = @(x) removevars(x, setdiff( x.Properties.VariableNames(2:end)', metadata.ID)' );
@@ -38,12 +37,11 @@ microbiomes = structfun(rmTaxaFun,microbiomes,'UniformOutput',false);
 % metadata variable
 diversityData = structfun(@getDiversityMetrics,microbiomes,'UniformOutput',false);
 
-
 % Now, calculate the fold changes from the pre-mapped to the mapped metrics
 
 % Get the variable names
-varNames = string(diversityData.mappedPath.Properties.VariableNames);
-foldChangeFun = @(x) diversityData.mappedPath.(x) ./ diversityData.preMappedPath.(x);
+varNames = string(diversityData.microbiotaWbmPathFilt.Properties.VariableNames);
+foldChangeFun = @(x) diversityData.microbiotaWbmPathFilt.(x) ./ diversityData.preMappedPath.(x);
 foldChanges = arrayfun(foldChangeFun, varNames,'UniformOutput',false);
 diversityData.foldChanges = array2table(horzcat(foldChanges{:}),'VariableNames',varNames);
 
@@ -54,15 +52,15 @@ diversityStats = structfun( @(x) funCont(table2array(x))', diversityData, 'Unifo
 diversityStats = struct2table(diversityStats,'RowNames',varNames); % Convert structured array to table
 
 % Calculate p-values for the differences before and after mapping
-ttestFun = @(x) ttest2( diversityData.preMappedPath.(x), diversityData.mappedPath.(x) ); % Two-sample t-test. Differences in means?
-[~,pVals,~,~] = arrayfun(ttestFun, varNames, 'UniformOutput', false);
+ttestFun = @(x) ranksum( diversityData.preMappedPath.(x), diversityData.microbiotaWbmPathFilt.(x) ); % Two-sample t-test. Differences in means?
+pVals = arrayfun(ttestFun, varNames, 'UniformOutput', false);
 pVals = cell2mat(pVals)';
 
 % Add p-values to statistics
 diversityStats = addvars(diversityStats, pVals,'NewVariableNames','P-value');
 
 % Add the total number of species to the table
-numSpecies = [height(microbiomes.preMappedPath) height(microbiomes.mappedPath) height(microbiomes.mappedPath)/height(microbiomes.preMappedPath) nan];
+numSpecies = [height(microbiomes.preMappedPath) height(microbiomes.microbiotaWbmPathFilt) height(microbiomes.microbiotaWbmPathFilt)/height(microbiomes.preMappedPath) nan];
 diversityStats{'Total species',:} = numSpecies;
 
 

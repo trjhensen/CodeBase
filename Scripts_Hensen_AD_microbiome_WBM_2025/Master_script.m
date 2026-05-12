@@ -25,9 +25,14 @@ paths.root = what('ADRC').path; % Set working directory
 paths.inputs = fullfile(paths.root,'inputs');
 paths.outputs = fullfile(what('ADRC').path,'outputs'); % Set directory to save analysis results
 
-
+% Set paths for new flux outputs
+paths.fluxes = fullfile(paths.outputs,'fluxes');
+paths.FBA  = fullfile(paths.outputs,'fluxes','FBA');
 paths.figures = fullfile(paths.outputs,'figures');
 paths.fluxes = fullfile(paths.outputs,'fluxes');
+paths.fluxAnalysis = fullfile(paths.fluxes,'analysis');
+paths.fluxPath = fullfile(paths.fluxAnalysis,'processed_fluxes.csv');
+
 paths.microbetoflux = fullfile(paths.outputs,'microbetoflux');
 
 % Set paths for microbiome processing
@@ -35,9 +40,28 @@ paths.microbiome = fullfile(paths.inputs,'microbiome');
 paths.unprocessedMicrobes = fullfile(paths.microbiome,'unprocessed');
 paths.processedMicrobes = fullfile(paths.microbiome,'processed');
 
-if 0 
+% Set microbiome processing outputs
+paths.processedMicrobiome = fullfile(paths.outputs,'processedMicrobiome');
+paths.microbiotaPath = fullfile(paths.outputs,'resultMARS','normalized_preMapped','normalized_preMapped_species.csv'); 
+paths.microbiotaPathFilt = fullfile(paths.processedMicrobiome,'filtered_normalized_preMapped_species.csv');
+paths.mappedMicrobePath = fullfile(paths.fluxAnalysis,'WBM_relative_abundances.csv'); % Microbial relative abundances
+paths.microbiotaWbmPathFilt = fullfile(paths.processedMicrobiome,'filtered_WBM_relative_abundances.csv');
+if ~isfolder(paths.processedMicrobiome); mkdir(paths.processedMicrobiome); end
+
+% Set metadata paths
+paths.metadataOutputFolder = fullfile(paths.outputs,'metadata');
+paths.metadataRaw = fullfile(paths.inputs,'NACC_NCRAD_FECALSET_COMBINED_NO_NATIVE_AMER_2024-03-04_2144_COLETTE.csv');
+paths.metadataProcessed = fullfile(paths.metadataOutputFolder,'prunedProcessedMetadata.csv');
+paths.metadataPrunedProcessed = fullfile(paths.metadataOutputFolder,'fluxPrunedProcessedMetadata.csv');
+if ~isfolder(paths.metadataOutputFolder); mkdir(paths.metadataOutputFolder); end % Create folder if not yet available
+
+% Set summary statistics paths
+paths.metadataSummaryStats = fullfile(paths.metadataOutputFolder,'metadataSummaryStats.xlsx');
+paths.mappingSummaryStats = fullfile(paths.metadataOutputFolder,'microbiomeMappingSummaryStats.xlsx');
+
+if 0
     % Find current folders and remove all outputs except for the modelling data
-    foldersToRm = setdiff({dir(paths.outputs).name}, {'Knirps','ResultMARS','ResultMARS_NEW','resultMgPipe','Sneezy','logFile_initialisation.txt','.','..'});
+    foldersToRm = setdiff({dir(paths.outputs).name}, {'fluxes','microbiome','Knirps','ResultMARS','ResultMARS_NEW','resultMgPipe','Sneezy','logFile_initialisation.txt','.','..'});
     foldersToRm = fullfile(paths.outputs,foldersToRm); % Generate paths
     
     for i = 1:length(foldersToRm)
@@ -48,7 +72,7 @@ if 0
     end
     
     % Make sure that the core output folders exist
-    cellfun(@mkdir, {paths.figures,paths.fluxes,paths.microbetoflux}); 
+    cellfun(@mkdir, {paths.figures,paths.fluxes,paths.processedMicrobiome, paths.microbetoflux}); 
 end
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -87,6 +111,7 @@ if ~isfolder(paths.Mars.outputPathMars) % Only needs to be run once
 
 end
 
+
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%%%%%%%%%%%%%%%% METADATA INVESTIGATION AND PRUNING %%%%%%%%%%%%%%%%%%%%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -94,19 +119,13 @@ end
 % Clean up workspace 
 clearvars -except paths; clc;
 
-% Define metadata path
-paths.metadata = fullfile(paths.inputs,'NACC_NCRAD_FECALSET_COMBINED_NO_NATIVE_AMER_2024-03-04_2144_COLETTE.csv');
-paths.metadataOutputFolder = fullfile(paths.outputs,'metadata');
-
-if ~isfolder(paths.metadataOutputFolder); mkdir(paths.metadataOutputFolder); end
-
 % Set paths for ease of use
 microbiomeInputFolder = paths.microbiome;
 outputPathMars = paths.Mars.outputPathMars;
 metadataOutputFolder = paths.metadataOutputFolder;
 
 % Process the patient metadata
-metadata = processMetadataADRC(paths.metadata, paths.Mars.inputTable);
+metadata = processMetadataADRC(paths.metadataRaw, paths.Mars.inputTable);
 
 % Add cognitive score information
 createFig = false;
@@ -129,22 +148,15 @@ metadataTechCov = appendTechnicalCovariatesMetadata(metadataMars, microbiomeInpu
 % Remove samples with multiple timepoints and samples without dementia
 % information
 metadataProcessed = rmAdrcOverlapAndMissing(metadataTechCov);
-
-if 0 
-    [tbl,chi2,p,labels] = crosstab(metadataProcessed.NACCUDSD,metadataProcessed.NACCALZD);
-    tbl = array2table(tbl,"RowNames",labels(:,1), "VariableNames",labels(1:3,2)')
-end
-
+groupsummary(metadataProcessed,'NACCUDSD')
 % Remove low quality samples (Check IBD status, alcohol intake, pain
 % medication, smoking, mood disorders, Intestinal inflammation, sleep-aid
 % medication. Remove samples if almost non of the
 % individuals have a yes for these metadata.)
-[metadataPruned, prunedMetadataPath, metadataIntermedPruning] = pruneMetadataADRC(metadataProcessed, metadataOutputFolder);
-paths.metadata = prunedMetadataPath;
-
-
-metadata = metadataPruned;
-summaryStats = makeADRCmetadataTable(metadataPruned);
+[metadataPruned, metadataIntermedPruning] = pruneMetadataADRC(metadataProcessed);
+%%
+% Save updated metadata file with technical co-variate information
+writetable(metadataPruned,paths.metadataProcessed)
 
 % Describe the effects of metagenomic mapping the gut microbiome relative abundances
 
@@ -171,14 +183,9 @@ summaryStats = makeADRCmetadataTable(metadataPruned);
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%%%%%%%%%%%%%%%%%%%%% Processing of FBA solutions %%%%%%%%%%%%%%%%%%%%%%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%%
+
 % Clean up workspace
 clearvars -except paths; clc;
-
-% Set paths for new flux outputs
-paths.fluxes = fullfile(paths.outputs,'fluxes');
-paths.FBA  = fullfile(paths.outputs,'fluxes','FBA');
-paths.fluxAnalysis = fullfile(paths.fluxes,'analysis');
 
 % Move FBA results from the two dwarfs to a shared folder 
 if ~isfolder(paths.FBA); OK = moveAdrcFbaRes(paths.root,paths.FBA); end
@@ -193,93 +200,97 @@ if ~isfolder(paths.fluxAnalysis)
     % paramFluxProcessing.fluxMicrobeCorrelationMetric = 'spearman_rho';
 
     % Process flux results
-    analyseGF = false;
+    analyseGF = true;
     analyseWBMsol(paths.FBA,paramFluxProcessing, paths.fluxAnalysis,analyseGF);
 
     % Calculate microbe to flux contributon potentials; 
     disp('Extract microbial abundances and shadow prices')
     extractMicrobeContributionsADRC(paths.FBA, paths.fluxAnalysis);
 
-    fbaDir = paths.FBA;
-    saveDir = paths.fluxes;
-    bootSamp = 10000;
+    if 0
+        fbaDir = paths.FBA;
+        saveDir = paths.fluxes;
+        bootSamp = 10000;
+    
+        poolobj = gcp('nocreate');
+        if isempty(poolobj); parpool(feature('numCores')); end
+    
+        % Extract diet reaction reduced cost values
+        disp('Extract diet reaction reduced cost values')
+        tic
+        dietSensFolder = getDietSensitivity(fbaDir, saveDir);
+        toc
+        % Calculate the mean average reduced cost value and 95% CI using
+        % bootstrapping
+        disp('Calculate the bootstrapped mean average reduced cost for each objective and diet reaction')
+        tic
+        bootMeanTable = getDietRCstats(dietSensFolder, bootSamp);
+        toc
 
-    poolobj = gcp('nocreate');
-    if isempty(poolobj); parpool(feature('numCores')); end
+        % Convert diet reaction names to metabolite names via VMH database lookup
+        database = loadVMHDatabase().metabolites;
+        dietMets = erase(bootMeanTable.('Diet reaction'), {'Diet_EX_', '[d]'});
+        
+        [uniqueMets, ~, idx] = unique(dietMets);
+        metNames = repmat({'NA'}, size(uniqueMets));
+        [~, ia, ib] = intersect(uniqueMets, database(:,1));
+        metNames(ia) = database(ib, 2);
+        
+        bootMeanTable.('Diet metabolite name') = renamecats(categorical(dietMets), uniqueMets, metNames);
 
-    % Extract diet reaction reduced cost values
-    disp('Extract diet reaction reduced cost values')
-    tic
-    dietSensFolder = getDietSensitivity(fbaDir, saveDir);
-    toc
-    % Calculate the mean average reduced cost value and 95% CI using
-    % bootstrapping
-    disp('Calculate the bootstrapped mean average reduced cost for each objective and diet reaction')
-    tic
-    bootMeanTable = getDietRCstats(dietSensFolder, bootSamp);
-    toc
-    paths.dietSensStats = fullfile(paths.fluxes,'diet_redCost_sampleMean_stats.csv');
-    writetable(bootMeanTable, paths.dietSensStats) % Write results to file
+        % Save results
+        paths.dietSensStats = fullfile(paths.fluxes,'diet_redCost_sampleMean_stats.csv');
+        writetable(bootMeanTable, paths.dietSensStats) % Write results to file
+    end
 end
-
-% Add paths to the paths variable as inputs for further processing of the
-% FBA results.
-paths.mappedMicrobePath = fullfile(paths.fluxAnalysis,'WBM_relative_abundances.csv'); % Microbial relative abundances
-paths.mContributionDir = fullfile(paths.fluxAnalysis,'potentialMicrobeContributions'); % Folder with biomass shadow prices * relative abundances
-paths.fluxPath = fullfile(paths.fluxes,'analysis','processed_fluxes.csv');
-
-% Map metabolon metabolomics data and append it to the metadata variables
-paths.rawMetabolonPath = fullfile(paths.inputs,'metabolomics','ADRC Metabolon Preprocessed Unblinded 05102024.xlsx'); % Metabolon samples
-rxnsToMap = readcell(paths.fluxPath,'Range','1C:1ZZZ');
-[~,paths.metabolonPath] = appendMetabolonToMetada(rxnsToMap, paths.rawMetabolonPath, paths.metadata, paths.outputs);
-
-% Now, we will test how well the fluxes of the selected metabolites can
-% explain the metabolomic measurements.
-fluxPath = paths.fluxPath;
-metabolonPath = paths.metabolonPath;
-metadataPath = paths.metadata;
-saveDir = paths.fluxes;
-if 0
-    [~, ~] = fluxMetabolonCorr(paths.fluxPath,paths.metabolonPath,paths.metadata, paths.fluxes); % Flux-metabolome correlation analysis
-end
-% Correlate all flux predictions with the metabolomics abundances
-[RHOTab, RHOsigTab, pValTab] = fluxMetabolonCorr2(fluxPath,metabolonPath);
-
-% save results
-fileName = fullfile(saveDir,'flux_metabolon_corr_2.xlsx');
-cellfun(@(x,y) writetable(x,fileName,'Sheet',y,'WriteRowNames',true), {RHOTab, RHOsigTab, pValTab}, {'RHO','SigCorr','pVals'});
-%%
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%% Flux outlier removal %%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 % Clean up workspace
-% clearvars -except paths; clc;
+clearvars -except paths; clc;
 
 % Lets investigate potential sample outliers. 
-close all; [sampleImportanceTable, explVar] = sampleOutliersInFluxesADRC(paths.fluxPath, paths.metadata, paths.fluxAnalysis);
+close all; [sampleImportanceTable, explVar] = sampleOutliersInFluxesADRC(paths.fluxPath, paths.metadataProcessed, paths.fluxAnalysis);
 %close all;
 % Inspecting the outliers in the fluxes found that:
 % 1) The top outlier (X42680612) had schizophrenia and AD
 % 2) The second top (X42816255) outlier had no AD, but had a colon resection (partly removed) in 2016.
 
-% These samples will be removed from the metadata file:
-[paths.metadata, metadata] = pruneFluxOutliersFromMetadataADRC(sampleImportanceTable,paths.metadata,2); % Remove the top 2 outliers in the fluxes
+% Load metadata, remove samples and save updated metadata file
+% [paths.metadata, metadata] = pruneFluxOutliersFromMetadataADRC(sampleImportanceTable,paths.metadata,2); % Remove the top 2 outliers in the fluxes
+metadata = readtable(paths.metadataProcessed,'VariableNamingRule','preserve');
+metadata(matches(metadata.ID,sampleImportanceTable.ID(1:2)),:) = []; % Remove samples
+writetable(metadata,paths.metadataPrunedProcessed); % Save updated metadata file
 
-% Generate metadata summary file
-
-
-% Columns: Variable, N, CN (N=), MCI (N=), Dementia (N=)
-% Rows: AD diagnosis, Age, Sex female, no. (%), Education in years, BMI,
-% DAILY_ALCOHOL, Hypertension, NPS, APOE genotype (E4), Global cognition, p-value
+% Generate summary statistics table
 summaryStats = makeADRCmetadataTable(metadata);
-writetable(summaryStats,fullfile(paths.metadataOutputFolder,'metadataSummaryStats.xlsx'),'WriteRowNames',false,'WriteMode','replacefile')
+writetable(summaryStats,paths.metadataSummaryStats,'WriteRowNames',false,'WriteMode','replacefile')
 
-% Next, generate summary statistics before and after mapping:
-diversityStats = mappingSummaryStats(paths);
-writetable(diversityStats,fullfile(paths.metadataOutputFolder,'microbiomeMappingSummaryStats.xlsx'),'WriteRowNames',true,'WriteMode','replacefile')
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%% Metabolomics processing %%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
+% Map metabolon metabolomics data and append it to the metadata variables
+paths.rawMetabolonPath = fullfile(paths.inputs,'metabolomics','ADRC Metabolon Preprocessed Unblinded 05102024.xlsx'); % Metabolon samples
+rxnsToMap = readcell(paths.fluxPath,'Range','1C:1ZZZ');
+[~,paths.metabolonPath] = appendMetabolonToMetada(rxnsToMap, paths.rawMetabolonPath, paths.metadataPrunedProcessed, paths.outputs);
+
+% Now, we will test how well the fluxes of the selected metabolites can
+% explain the metabolomic measurements.
+% Correlate all flux predictions with the metabolomics abundances
+[results, ~, ~] = fluxMetabolonCorr(paths.fluxPath,paths.metabolonPath,paths.metadataPrunedProcessed); % Flux-metabolome correlation analysis
+
+% Obtain correlations with 95% confidence intervals
+fluxPath = paths.fluxPath;
+metabolonPath = paths.metabolonPath;
+corrTable = fluxMetabolonCorr2(fluxPath,metabolonPath);
+
+% save results
+fileName = fullfile(paths.fluxes,'flux_metabolon_corr.xlsx');
+writetable(results,fileName,'Sheet','Regressions');
+writetable(corrTable,fileName,'Sheet','Spearman_rho');
 
 % Also generate metadata summary file for the plasma metabolomics dataset
 % Load table with plasma metabolomics
@@ -287,11 +298,46 @@ plasmaTable = readtable(paths.metabolonPath,'VariableNamingRule','preserve');
 % Remove all nan samples
 plasmaTable(isnan(plasmaTable{:,2}),:)=[];
 % Filter metadata table
+metadata = readtable(paths.metadataPrunedProcessed,'VariableNamingRule','preserve');
 metadataPlasma = metadata(matches(metadata.ID,plasmaTable.ID),:);
 % Create summary statistics table
 summaryStatsPlasma = makeADRCmetadataTable(metadataPlasma);
 % Write table to file
 writetable(summaryStatsPlasma,fullfile(paths.metadataOutputFolder,'metadataPlasmaSummaryStats.xlsx'),'WriteRowNames',false,'WriteMode','replacefile')
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%% Microbiome processing and summary statistics %%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+% Set paths for microbiome dataset pruning:
+microbiotaWbmPath = paths.mappedMicrobePath;
+microbiotaPath = paths.microbiotaPath;
+metadataPath = paths.metadataPrunedProcessed;
+
+% Prune microbiome tables for further statistical descriptions
+[microbiome, wbmMicrobiome] = pruneMicrobiomeDataForStats(microbiotaWbmPath, microbiotaPath, metadataPath);
+
+% Save updated tables
+cellfun(@(x,y) writetable(x,y,'WriteRowNames',true),{microbiome, wbmMicrobiome},{paths.microbiotaPathFilt,paths.microbiotaWbmPathFilt})
+
+% Investigate the effect of mapping on each class
+% Set inputs
+taxonomyPath = fullfile(paths.outputs,'resultMARS','preprocessedInput_afterRenaming.csv');
+microbiotaPathFilt = paths.microbiotaPathFilt;
+microbiotaWbmPathFilt = paths.microbiotaWbmPathFilt;
+[mappingPotential, mappingPotentialFilt,savePath] = findPotentialReadCovIncr(paths.Mars.outputPathMars, microbiotaPathFilt);
+
+% Perform an under-representation analysis
+taxonEnrichmentTables = findTaxonomicOverrepInUnmappedTaxa(microbiotaPathFilt,taxonomyPath,microbiotaWbmPathFilt); 
+
+% Save enrichment statistics to excel table
+savePath = fullfile(paths.processedMicrobiome,'mappingLossEnrichment.xlsx');
+cellfun(@(x,y) writetable(x, savePath, 'Sheet',y), taxonEnrichmentTables, cellfun(@(x) x.Properties.VariableNames(1), taxonEnrichmentTables))
+
+% Next, generate summary statistics before and after mapping:
+preMappedPath = fullfile(paths.outputs,'resultMARS', 'normalized_preMapped','normalized_preMapped_species.csv');
+diversityStats = mappingSummaryStats(preMappedPath, microbiotaWbmPathFilt, metadataPath);
+writetable(diversityStats,paths.mappingSummaryStats,'WriteRowNames',true,'WriteMode','replacefile')
 
 %%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -326,7 +372,7 @@ end
 
 
 % Load and prepare input data and metadata
-[preparedInputTable, preparedMetadata] = prepareDataForStatsADRC(paths.fluxPath, paths.metadata,false);
+[preparedInputTable, preparedMetadata] = prepareDataForStatsADRC(paths.fluxPath, paths.metadataPrunedProcessed,false);
 %preparedMetadata.(param.response) = renamecats( preparedMetadata.(param.response) ,dementiaCats,{'Healthy controls','MCI','AD dementia'});
 
 % State confounders
@@ -334,13 +380,13 @@ paths.adConfounders = {'Sex','age_at_collection','mapped_species_reads','lane','
 
 if 1
     % dchacSampsToRm = {'X42510869','X42754461','X42547915','X4262232'};
-   dchacSampsToRm =  {'X4273975'
-'X42409516'
-'X42562933'
-'X42808065'
-'X42487528'
-'X42373971'};
-    preparedInputTable(matches(preparedInputTable.ID,dchacSampsToRm),:)=[];
+%    dchacSampsToRm =  {'X4273975'
+% 'X42409516'
+% 'X42562933'
+% 'X42808065'
+% 'X42487528'
+% 'X42373971'};
+    %preparedInputTable(matches(preparedInputTable.ID,dchacSampsToRm),:)=[];
     paths.adConfounders = {'Sex','age_at_collection','NACCBMI','EDUC','APOE_E4','lane','mapped_species_reads','Ethanol_added'}; 
 
     % % Define regression formula
@@ -375,10 +421,10 @@ preparedMetadata.(param.response) = categorical(preparedMetadata.(param.response
 % preparedMetadata.(param.response) = renamecats( preparedMetadata.(param.response) ,dementiaCats,{'Healthy controls','MCI','AD dementia'});
 
 % Create tiled figure
+% results_DM(:,6:end-1) = fillmissing(results_DM(:,6:end-1),'constant',1);
 fig = figure('Position',[39,457/3,1878,421*2]);
 tiledlayout(2,length(paths.dementiaRxnsOfInterest),'TileSpacing','tight','Padding','loose');
 createMultipleBoxPlotsADRC(preparedInputTable, preparedMetadata, paths.dementiaRxnsOfInterest, results_DM, param);
-%%
 
 % Generate paths to save results
 adRegTabPath = fullfile(paths.AD,'AD_progression_results.xlsx');
@@ -390,14 +436,13 @@ writetable(results_DM,adRegTabPath,'Sheet','Fluxes')
 writetable(resTableDM,adRegTabSumPath,'Sheet','Fluxes','Range','A2')
 exportgraphics(fig,adBoxplotPath,'Resolution',300)
 
-%%
 % APOE differential flux analysis %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 % Previously, we also found an association between APOE allele status and
 % bile acid fluxes. Here, we will try to replicate this analysis 
 
 % Load flux data
-[preparedInputTable, preparedMetadata] = prepareDataForStatsADRC(paths.fluxPath, paths.metadata, false); 
+[preparedInputTable, preparedMetadata] = prepareDataForStatsADRC(paths.fluxPath, paths.metadataPrunedProcessed, false); 
 
 % Filter on reactions that differed in the the AD patients
 preparedInputTable = preparedInputTable(:,["ID", paths.dementiaRxnsOfInterest']);
@@ -410,7 +455,7 @@ preparedMetadata = preparedMetadata(matches(preparedMetadata.NACCUDSD,'Healthy c
 response = 'Flux';
 
 % State covariates to control for
-paths.apoeFluxConfounders = {'Sex','age_at_collection','mapped_species_reads','lane','Ethanol_added','APOE_ALLELE'};
+paths.apoeFluxConfounders = {'Sex','age_at_collection','NACCBMI','mapped_species_reads','lane','Ethanol_added','APOE_ALLELE'};
 
 % Perform regression analysis to find associations between APOE allele
 % status and the flux predictions
@@ -419,6 +464,7 @@ pFilter = 1;
 
 % Save identified metabolites
 paths.apoeRxnsOfInterest = paths.dementiaRxnsOfInterest;%unique(results_APOE.Reaction(results_APOE.pValue<pFilter),'stable');
+% paths.apoeRxnsOfInterest = unique(results_APOE.Reaction(results_APOE.pValue<0.05),'stable');
 
 % Prepare apoe group data
 preparedMetadata.APOE_ALLELE = categorical(preparedMetadata.APOE_ALLELE,{'ϵ2','ϵ3','ϵ4'});
@@ -436,7 +482,7 @@ param.apoeFlag = 1;
 
 % Create tiled figure
 fig = figure('Position',[39,457/3,1878,421*2]); %39,131,1878,747
-tiledlayout(2,5,'TileSpacing','tight','Padding','loose');
+tiledlayout(2,length(paths.apoeRxnsOfInterest),'TileSpacing','tight','Padding','loose');
 createMultipleBoxPlotsADRC(preparedInputTable, preparedMetadata, paths.apoeRxnsOfInterest, results_APOE, param);
 
 % Generate paths to save results
@@ -449,7 +495,7 @@ writetable(results_APOE,apoeRegTabPath,'Sheet','Fluxes')
 writetable(resTable,apoeRegTabSumPath,'Sheet','Fluxes')
 exportgraphics(fig,apoeBoxplotPath,'Resolution',300)
 
-
+%%
 % Cognition differential flux analysis %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 % Previously, bile acids have been associated with global cognitive
@@ -459,27 +505,32 @@ exportgraphics(fig,apoeBoxplotPath,'Resolution',300)
 % in normal, MCI, and AD-dementia patients?
 
 % Load and prepare input flux data and metadata
-[preparedInputTable, preparedMetadata] = prepareDataForStatsADRC(paths.fluxPath, paths.metadata);
+[preparedInputTable, preparedMetadata] = prepareDataForStatsADRC(paths.fluxPath, paths.metadataPrunedProcessed);
 
 % Filter on reactions that differed in the the AD patients
 preparedInputTable = preparedInputTable(:,["ID", paths.dementiaRxnsOfInterest']);
 
+if 0 
 % Only investigate cognitively normal samples
 preparedMetadata = preparedMetadata(matches(preparedMetadata.NACCUDSD,'Healthy controls'),:);
+end
 
 % State predictor of interest and covariates to control for
 paths.cognitionConfounders = {'Sex','age_at_collection','EDUC','NACCBMI','mapped_species_reads','lane','Ethanol_added','APOE_E4'};
 
+% paths.cognitionConfounders = {'Sex','age_at_collection','EDUC','NACCBMI','APOE_E4'};
+
 % Prepare regression formula
 predictor = 'Flux';
 confounders = paths.cognitionConfounders;
-response = 'NACCMOCA';
+response = 'NACCMOCA'; %preparedMetadata.NACCMOCA = normalize(log(preparedMetadata.NACCMOCA));
+% response = 'G';
 regFormula = string(strcat(response,'~',predictor,'+',strjoin(confounders,'+')));
 
 % Perform regressions on global cognitive scores
-results_G = performRegressions(preparedInputTable,preparedMetadata,regFormula);
+[results_G,regressions_G] = performRegressions(preparedInputTable,preparedMetadata,regFormula);
 results_G = addvars(results_G.Flux, repmat("normal cognition", height(results_G.Flux),1),'NewVariableNames','subgroups','After','Regression type');
- 
+
 % pFilter = 1;
 % results_G = cognitiveScoreAnalysis(preparedInputTable,preparedMetadata, 'Flux', paths.cognitionConfounders, pFilter);
 
@@ -544,12 +595,20 @@ microbesToTest(matches(microbesToTest,'Sex'))=[];
 paths.adFluxAssociatedMicrobes = microbesToTest';
 
 % Associated relative abundances of microbes to APOE status
-[preparedInputTable, preparedMetadata] = prepareDataForStatsADRC(paths.mappedMicrobePath, paths.metadata, true); % Load microbiome read data
+[preparedInputTable, preparedMetadata] = prepareDataForStatsADRC(paths.mappedMicrobePath, paths.metadataPrunedProcessed, true); % Load microbiome read data
+
 preparedInputTable = preparedInputTable(:,[{'ID'},paths.adFluxAssociatedMicrobes]); % Filter on microbes of interest
 %preparedInputTable(:,2:end) = fillmissing(preparedInputTable(:,2:end),'constant',0); % Do I need this?
 
+if 0
+    paths.adConfounders = {'Sex','age_at_collection','NACCBMI','EDUC','APOE_E4','lane','mapped_species_reads','Ethanol_added'}; 
+else
+    paths.adConfounders = {'Sex','age_at_collection','NACCBMI','EDUC','APOE_E4','lane','mapped_species_reads','Ethanol_added'}; 
+end
+
 % Test if the flux associated microbes individually associate with the cognitive scores
-[~, paths.adMicrobesOfInterest, results_DM_microbe, regressions_DM_microbe] = alzheimerAnalysis(preparedInputTable,preparedMetadata,'Flux',paths.adConfounders);
+%preparedInputTable = preparedInputTable(:,{'ID','Bacteroides_thetaiotaomicron'});
+[results_AD_microbe, paths.adMicrobesOfInterest, results_DM_microbe, regressions_DM_microbe] = alzheimerAnalysis(preparedInputTable,preparedMetadata,'Flux',paths.adConfounders);
 
 % Create regression table for figure with microbes:
 resTableMicrobesAD = buildRegressionTables(paths.adMicrobesOfInterest, results_DM_microbe, regressions_DM_microbe, 'AD');
@@ -590,7 +649,7 @@ microbesToTest = elasticNetResults.Taxa(~matches(elasticNetResults.Taxa,'Sex'));
 paths.apoeFluxAssociatedMicrobes = microbesToTest';
 
 % Associated relative abundances of microbes to APOE status
-[preparedInputTable, preparedMetadata] = prepareDataForStatsADRC(paths.mappedMicrobePath, paths.metadata, true); % Load microbiome read data
+[preparedInputTable, preparedMetadata] = prepareDataForStatsADRC(paths.mappedMicrobePath, paths.metadataPrunedProcessed, true); % Load microbiome read data
 preparedInputTable = preparedInputTable(:,[{'ID'},paths.apoeFluxAssociatedMicrobes]); % Filter on microbes of interest
 %preparedInputTable(:,2:end) = fillmissing(preparedInputTable(:,2:end),'constant',0); % Do I need this?
 
@@ -631,7 +690,7 @@ writetable(results_APOE_microbe,apoeRegTabPath,'Sheet','Microbes')
 
 % Load and prepare input data and metadata
 transformData = false;
-[preparedInputTable, preparedMetadata] = prepareDataForStatsADRC(paths.metabolonPath, paths.metadata, transformData);
+[preparedInputTable, preparedMetadata] = prepareDataForStatsADRC(paths.metabolonPath, paths.metadataPrunedProcessed, transformData);
 
 % Filter on metabolites of interest
 varsToCheck = ['ID', erase(paths.adRxnsOfInterest,{'DM_','[bc]'})'];
@@ -686,7 +745,7 @@ writetable(results_DM_plasma,filePath,'Sheet','Plasma','WriteMode','overwriteshe
 % First, lets load and process the plasma metabolomic data. I want to
 % investigate all mapped metabolomic markers for now.
 transformData = false;
-[preparedInputTable, preparedMetadata] = prepareDataForStatsADRC(paths.metabolonPath, paths.metadata, transformData);
+[preparedInputTable, preparedMetadata] = prepareDataForStatsADRC(paths.metabolonPath, paths.metadataPrunedProcessed, transformData);
 preparedMetadata = preparedMetadata(matches(preparedMetadata.NACCUDSD,'Healthy controls'),:); % Only investigate cognitively normal samples
 
 % Remove microbiome-specific covariates
@@ -765,11 +824,14 @@ fileNames = {'preMapping_abundanceMetrics_Species.csv',... % Define the files to
 % Generate supplementary table
 mergedTaxa = collectAbundanceStatsADRC(paths, fileNames);
 
-
 % Set inputs for phylum-level summary statistics
-microbiotaPath = fullfile(paths.outputs,'resultMARS','normalized_preMapped','normalized_preMapped_species.csv'); 
 taxonomyPath = fullfile(paths.outputs,'resultMARS','preprocessedInput_afterRenaming.csv');
-microbiotaWbmPath = fullfile(paths.outputs,'fluxes','analysis','WBM_relative_abundances.csv');
+microbiotaPath = paths.microbiotaPathFilt;
+microbiotaWbmPath = paths.microbiotaWbmPathFilt;
+
+% Filter on all gut microbes in the filtered gut microbiome table
+microbiomeFiltNames = readcell(paths.microbiotaPathFilt,'Range','B1:ZZZ1')';
+mergedTaxa = mergedTaxa(matches(mergedTaxa.("Microbial species"),microbiomeFiltNames),:);
 
 % Collect summary statistics on phylum-level mapping effects
 summaryMerged = collectPhylumStatsADRC(microbiotaPath, taxonomyPath, microbiotaWbmPath);
@@ -842,10 +904,10 @@ description{2} = [...
     'Positive regression coefficients indicate positive associations between predicted fluxes from the less severe disease status to the more severe disease status, e.g., control -> AD MCI, while negative regression coefficients indicate negative correlations with the fluxes.']; % Details
 writeSupplementADRC(fluxAdRegressionTable, description, paths.outputs)
 
-%%%% PLASMA METABOLITES AND PLASMA REGRESSION RESULTS ->
+%%%% PLASMA METABOLITES, FLUX-PLASMA CORRELATIONS, AND PLASMA REGRESSION RESULTS ->
 
 % Load tables
-[plasmaMetabolites,plasmaAdRegressionTable] = preparePlasmaTablesForSM(paths);
+[plasmaMetabolites,~, plasmaAdRegressionTable] = preparePlasmaTablesForSM(paths);
 
 % Save tables to supplementary file
 description = cell(2,1); 
@@ -854,6 +916,7 @@ description{2} = ['The regression log odds represent the estimated change in log
     'Positive regression coefficients indicate positive associations between plasma levels from the less severe disease status to the more severe disease status, e.g., control -> AD MCI, while negative regression coefficients indicate negative correlations with the plasma levels.',...
     ]; % Details
 writeSupplementADRC(plasmaMetabolites, description, paths.outputs, plasmaAdRegressionTable)
+
 
 
 %%%% FLUX MICROBE ASSOCIATIONS ->

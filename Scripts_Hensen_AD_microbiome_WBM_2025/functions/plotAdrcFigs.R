@@ -12,7 +12,8 @@ using<-function(...) {
   }
 }
 
-setwd('C://Users//mspg//Documents//ADRC')
+# setwd('C://Users//mspg//Documents//ADRC')
+setwd('/home/tim/Documents/ADRC')
 
 # - Load required packages
 using('tidyverse','here','pheatmap','RColorBrewer','viridis','tidytext','ggalluvial','ggplotify')
@@ -222,3 +223,45 @@ dev.off()
 #     legend.text = element_text(size=14),
 #     legend.title = element_text(size=14))
 # dev.off()
+
+
+################################################################################
+# Produce bar plots for the mean flux sensitivity upon microbial abundances
+
+# Load dataset
+objectives <- c('DM_amet[bc]','DM_arg_L[bc]','DM_creat[bc]','DM_taur[bc]','DM_for[bc]')
+newNames <- c('S-adenosyl-L-methionine','L-arginine','Creatine','Taurine','Formate')
+
+n <- 10
+data <- read.csv(
+  here('outputs','fluxes','diet_redCost_sampleMean_stats.csv'),
+  check.names = FALSE) %>%
+  # select(-`Diet reaction`) %>%
+  rename(`Diet reaction` = `Diet metabolite name`)%>% 
+  filter(Objective %in% objectives) %>% 
+  rename(Metabolite = Objective) %>%
+  group_by(Metabolite) %>%
+  arrange(desc(Mean),.by_group = TRUE) %>%
+  slice(1:n) %>%
+  mutate(Metabolite = factor(Metabolite,levels = objectives, labels = newNames))
+
+
+# Start r graphics png
+fileName <- here('outputs','figures','fluxDietSensitivityPlot.png')
+png(file=fileName,width = 13, height = 5, units = "in", res = 400)
+
+# Plot
+ggplot(data) +
+  geom_col( aes(x=Mean, y=reorder_within(`Diet reaction`,Mean,Metabolite)),fill='darkorange2',colour='black') +
+  geom_errorbarh(aes(y = reorder_within(`Diet reaction`,Mean,Metabolite), xmax = `97.5CI`, xmin = `2.5CI`,),height = .3) +
+  scale_y_reordered() +
+  facet_wrap(vars(Metabolite),scales = "free",ncol=5) +
+  scale_fill_viridis(discrete = TRUE, option='viridis') +
+  labs(y = 'Dietary metabolite',
+       x = 'Mean reduced cost value (error bars = 95% confidence interval)',
+       title = 'Sensitivity of predicted fluxes in blood towards a change in metabolic dietary consumption',
+       subtitle = 'Top 5 most influential dietary reactions') +
+  theme_bw()+
+  theme(legend.position="bottom",
+        axis.text.y = element_text(colour='black'))
+dev.off()
