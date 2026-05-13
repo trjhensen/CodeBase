@@ -14,6 +14,25 @@ function [metadataPlasmaMets,savePath] = appendMetabolonToMetada(rxnsToMap, meta
 
 % Map metabolon info on VMH ideas
 metabolonMapped = outerjoin(vmhTable3,metabolon,'Keys','CHEM_ID','MergeKeys',true,'Type','left');
+%%
+num=length(metabolonMapped.CHEM_ID);
+[~, idx] = unique(metabolonMapped.CHEM_ID);
+dups = metabolonMapped(setdiff(1:num, idx),:);
+metabolonMapped(matches(metabolonMapped.CHEM_ID, dups.CHEM_ID),:)
+
+% Manually fix wrongly mapped metabolites
+metabolonMapped(matches(metabolonMapped.VMHID,"xylt"),:) = [];
+metabolonMapped(matches(metabolonMapped.VMHID,"sfcys"),:) = [];
+metabolonMapped(matches(metabolonMapped.VMHID,"HC02192"),:) = [];
+metabolonMapped(matches(metabolonMapped.VMHID,"HC02192"),:) = [];
+metabolonMapped(matches(metabolonMapped.VMHID,"3dhchol"),:) = [];
+metabolonMapped(matches(metabolonMapped.VMHID,"CE2028"),:) = [];
+metabolonMapped(matches(metabolonMapped.VMHID,"hexdeceeth"),:) = [];
+metabolonMapped(matches(metabolonMapped.VMHID,"retinol_9_cis"),:) = [];
+
+
+%%
+
 metabolonMapped.Properties.RowNames = metabolonMapped.Var1;
 
 % Load processed plasma metabolomics data

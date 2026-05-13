@@ -1,4 +1,4 @@
-function writeSupplementADRC(suplTable, description, folder, suplTable2)
+function writeSupplementADRC(suplTable, description, folder, suplTable2, suplTable3)
 % Helper function for populating the supplementary materials excel file
 
 if nargin<4
@@ -62,6 +62,17 @@ if ~isempty(suplTable2)
     
     % Append the second supplementary table to excel sheet
     writetable(suplTable2,filePath,'Sheet',sheetName,'Range',rangeStart)
+
+    if ~isempty(suplTable3)
+    % Place the third table after the second empty column in excel sheet after the main table:
+    colNum = colNum+3;
+    colLetter = char(colNum + 64); % Convert to letter in alphabet using ASCII codes
+    rangeStart = [colLetter,'4']; % Find excel cell to start
+    
+    % Append the second supplementary table to excel sheet
+    writetable(suplTable3,filePath,'Sheet',sheetName,'Range',rangeStart)
+        
+    end
 end
 
 disp(append('Saved ',sheetName, ' to Supplementary_tables.xlsx'))

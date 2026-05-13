@@ -468,7 +468,6 @@ end
 function [coef, se, ci, t_stat, p_val, MSE, DF, LambdaMinMSE, SST, SSR, R2] = perfBootEnet(X, y , enBoot)
 % Perform bootstrapped elastic net regressions
 
-
 % Preallocate matrices
 n = length(y);
 bootCoefs = zeros(size(X,2), enBoot);

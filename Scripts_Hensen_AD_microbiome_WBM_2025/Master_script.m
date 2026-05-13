@@ -12,6 +12,7 @@
 % put the inputs in a folder "input" under the project directory.
 
 clear;clc;
+restoredefaultpath
 addpath(genpath('/home/tim/Documents/CodeBase'))
 addpath(genpath('/home/tim/Documents/ADRC/'))
 addpath(genpath('/home/tim/Documents/cobratoolbox'))

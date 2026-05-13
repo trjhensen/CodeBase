@@ -9,7 +9,7 @@ function tab = makeADRCmetadataTable(metadata)
 % Overall: [mean(metadata.age_at_collection),std(metadata.age_at_collection)]
 
 % Get variables of interest
-vars = {'NACCUDSD','Sex','age_at_collection','EDUC','NACCBMI','DAILY_ALCOHOL','HYPERT','NPS','NACCAPOE','NACCMOCA','G','APOE_E4'};
+vars = {'NACCUDSD','Sex','age_at_collection','EDUC','NACCBMI','DAILY_ALCOHOL','HYPERT','NPS','NACCAPOE','NACCMOCA','APOE_E4'};
 metadata = metadata(:,vars);
 
 % Generate a binary variable for each APOE genotype
@@ -102,7 +102,7 @@ tab{contVars,demNames} = vertcat(cellRes{:}); % Add the generated statistics to 
 
 % Generate p-values for the continues variables using a one-way anova test
 % (why not kruskall-wallis?)
-tab{contVars,'P-value'} = cellfun(@(x) anova1(metadata.(x),groups,"off") , contVars)';
+tab{contVars,'P-value'} = cellfun(@(x) kruskalwallis(metadata.(x),groups,"off") , contVars)';
 
 
 % Process table for inclusion in manuscript:

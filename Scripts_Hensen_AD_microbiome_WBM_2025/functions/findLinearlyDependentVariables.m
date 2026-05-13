@@ -232,20 +232,23 @@ prunedData = outerjoin(prunedData,constructedClusterFluxes,'MergeKeys',true);
 % Clarify subnetwork names
 linearDependentVars.Subnetwork = append("subnetwork_",string(linearDependentVars.Subnetwork));
 
-
-fprintf("> Save results to disk... \n")
-filePath = fullfile(saveDir,'linDepDataSubsets.xlsx');
-
-if isfile(filePath)
-    delete(filePath)
+if ~isempty(saveDir)
+    fprintf("> Save results to disk... \n")
+    filePath = fullfile(saveDir,'linDepDataSubsets.xlsx');
+    
+    if isfile(filePath)
+        delete(filePath)
+    end
+    
+    % Save results
+    writetable(linearDependentVars, filePath,'Sheet','linDepVars');
+    writetable(prunedData, filePath,'Sheet','uniqueData');
+    
+    figure;
+    p = plot(G);
+    p.Interpreter = 'none';
+    title('Linearly dependent subnetworks')
+else
+    filePath = '';
 end
-
-% Save results
-writetable(linearDependentVars, filePath,'Sheet','linDepVars');
-writetable(prunedData, filePath,'Sheet','uniqueData');
-
-figure;
-p = plot(G);
-p.Interpreter = 'none';
-title('Linearly dependent subnetworks')
 end

@@ -1,4 +1,4 @@
-function [mappingPotential, savePath] = findPotentialReadCovIncr(outputPathMars)
+function [mappingPotential,mappingPotentialFilt, savePath] = findPotentialReadCovIncr(outputPathMars, microbiotaPathFilt)
 % Description: Find for each unmapped microbial species how much the read coverage would
 % improve if included.
 
@@ -13,6 +13,12 @@ unmappedMetrics = readtable(unmappedSpeciesStatsPath);
 % Load pre-mapped microbiome data
 microbiome = readtable(fullfile(outputPathMars,'preprocessedInput_afterRenaming.csv'));
 
+% Filter on analysed samples and microbes
+microbiomeFilt = readtable(microbiotaPathFilt,'VariableNamingRule','preserve','ReadRowNames',true);
+microbiomeFilt = renamevars(rows2vars(microbiomeFilt),'OriginalVariableNames','Taxon');
+microbiomeFilt = convertvars(microbiomeFilt, 'Taxon', @(x) replace(x,"_"," "));
+microbiome = microbiome(contains(microbiome.Taxon, microbiomeFilt.Taxon),:);
+% microbiome = microbiome(:, microbiomeFilt.Properties.VariableNames);
 
 % Calculate current read coverage statistics from the pre-mapped relative abundances
 readCountTable = rows2vars(readCountsSum,"VariableNamesSource","Var1",'VariableNamingRule','preserve');
@@ -21,6 +27,10 @@ readCountTable.("Read coverage") = readCountTable.("Post mapping")./readCountTab
 % Preprocess unmapped taxa names
 unmappedMetrics.Taxon = strrep(unmappedMetrics.Taxon, '_', ' ');
 unmappedMetrics = sortrows(unmappedMetrics, 'mean', 'descend');
+
+% Also filter the readCountTable and unmappedMetrics table
+% readCountTable = readCountTable( matches(readCountTable.OriginalVariableNames, microbiomeFilt.Properties.VariableNames'),:);
+unmappedMetrics = unmappedMetrics( matches(unmappedMetrics.Taxon, microbiomeFilt.Taxon) ,:);
 
 % Calculate the mapping coverage improvements after mapping of each
 % unmapped microbial species. 
@@ -35,10 +45,18 @@ potReadCovSum = vertcat(potReadCovSum{:}); % Extract summary statistics
 potReadCovSumTable = array2table(potReadCovSum,'VariableNames',{'curr_readCov','potential_readCov','potential_Incr'}); % Create table
 mappingPotential = [unmappedMetrics potReadCovSumTable]; % Append new statistics to R.A of unmapped microbial species.
 
+if 1 
+    % Remove all unmapped taxa with sp
+    mappingPotentialFilt = mappingPotential(~contains(mappingPotential.Taxon,' sp'),:);
+    mappingPotentialFilt.cumIncrease = mappingPotentialFilt.curr_readCov + cumsum(mappingPotentialFilt.potential_Incr);
+
+end
+
 % Calculate the cumulative mean increase in read coverages for the unmappped microbial species
 mappingPotential.cumIncrease = mappingPotential.curr_readCov + cumsum(mappingPotential.potential_Incr);
 
-savePath = fullfile(outputPathMars,'metrics','Species','potential_higher_readCov_when_mapping_more_microbes.csv');
+savePath = fullfile(outputPathMars,'metrics','Species','potential_higher_readCov_when_mapping_more_microbes.xlsx');
+cellfun(@(x,y) writetable(x,savePath, 'Sheet', y), {mappingPotential, mappingPotentialFilt}, {'all_taxa','characterised_taxa'})
 writetable(mappingPotential,savePath)
 
 % Create overview figure on the effect of improved mapping on the data

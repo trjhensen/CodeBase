@@ -1,4 +1,4 @@
-function [plasmaMetabolites,plasmaAdRegressionTable] = preparePlasmaTablesForSM(paths)
+function [plasmaMetabolites,fluxPlasmaCorrelations, plasmaAdRegressionTable] = preparePlasmaTablesForSM(paths)
 % Function goal: Load and prepare the measured plasma metabolites and the
 % plasma regression results. 
 
@@ -17,6 +17,16 @@ plasmaMetabolites = removevars(plasmaMetabolites,{'Var1','TYPE'});
 plasmaMetabolites = movevars(plasmaMetabolites,'VMH_ID_of_analysed_metabolite','After','CHEMICAL_NAME');
 plasmaMetabolites = sortrows(plasmaMetabolites,"VMH_ID_of_analysed_metabolite","ascend");
 
+
+%%% Load the flux-plasma correlations
+fluxPlasmaCorrelations = readtable(fullfile(paths.fluxes,'flux_metabolon_corr.xlsx'),'Sheet','Spearman_rho','VariableNamingRule','preserve');
+
+% Convert VMH IDs of plasma metabolites to chemical names
+[uniqueMets, ~, ~] = unique(fluxPlasmaCorrelations.("Plasma metabolite"));
+metNames = repmat("NA", size(uniqueMets));
+[~, ia, ib] = intersect(uniqueMets, plasmaMetabolites.VMH_ID_of_analysed_metabolite);
+metNames(ia) = plasmaMetabolites.CHEMICAL_NAME(ib);
+fluxPlasmaCorrelations.("Plasma metabolite") = renamecats(categorical(fluxPlasmaCorrelations.("Plasma metabolite")), uniqueMets, metNames);
 
 %%% AD regression results %%%
 

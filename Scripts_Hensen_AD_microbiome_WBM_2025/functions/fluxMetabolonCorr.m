@@ -1,4 +1,4 @@
-function [corrTable, pvalTable] = fluxMetabolonCorr(fluxPath,metabolonPath,metadataPath, saveDir)
+function [results, corrTable, pvalTable] = fluxMetabolonCorr(fluxPath,metabolonPath,metadataPath)
 
 % Load the input flux data
 [preparedFluxes, preparedMetadata] = prepareDataForStatsADRC(fluxPath, metadataPath,true);
@@ -6,7 +6,7 @@ preparedFluxes.Properties.VariableNames = erase(preparedFluxes.Properties.Variab
 
 % Load the metabolomic data
 preparedPlasma = prepareDataForStatsADRC(metabolonPath, metadataPath, false);
-preparedPlasma = removevars(preparedPlasma,'DM_dchac[bc]');
+% preparedPlasma = removevars(preparedPlasma,'DM_dchac[bc]');
 
 % Filter on all metabolites except the metabolites of interest
 preparedPlasma = preparedPlasma(:,{'ID','arg_L','creat','taur'});
@@ -52,10 +52,4 @@ close all; figure; imagesc(RHO); colorbar;
 corrTable = array2table(RHO',"RowNames",preparedPlasma.Properties.VariableNames(2:end),'VariableNames',preparedFluxes.Properties.VariableNames(2:end));
 pvalTable = array2table(PVAL',"RowNames",preparedPlasma.Properties.VariableNames(2:end),'VariableNames',preparedFluxes.Properties.VariableNames(2:end));
 
-% save results
-fileName = fullfile(saveDir,'flux_metabolon_corr.xlsx');
-
-writetable(results,fileName,'Sheet','Regressions','WriteRowNames',true);
-writetable(corrTable,fileName,'Sheet','Spearman_rho','WriteRowNames',true);
-writetable(pvalTable,fileName,'Sheet','Spearman_pval','WriteRowNames',true);
 end

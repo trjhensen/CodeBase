@@ -11,7 +11,7 @@ if ~isvar(inputTable,'ID') && isvar(inputTable,'Row')
     inputTable = renamevars(inputTable,'Row','ID');
 end
 
-inputTable.ID = erase(inputTable.ID,{'mWBM_','_female','_male'});
+inputTable.ID = erase(inputTable.ID,{'mWBM_','_female','_male','m2WBM_'});
 
 % Remove sex information if present
 if any(matches(inputTable.Properties.VariableNames,'sex','IgnoreCase',true))
@@ -40,7 +40,7 @@ end
 % Make sure that the inputTable and metadata have the same samples
 [~,idxa,idxb] = intersect(string(metadata.ID),string(inputTable.ID),'stable');
 
-if numel(idxb)<length(metadata.ID)
+if 0 %numel(idxb)<length(metadata.ID)
     error('COBRA:BadInput', 'No overlapping samples could be found between the reads/flux table and the metadata table.')
 else
     metadata = metadata(idxa,:);
@@ -64,17 +64,23 @@ preparedInputTable = inputTable;
 
 % Transform the metadata, age, bmi, and total  sequence count for 
 % statistical analysis.
+metadata.NACCAGE = normalize(metadata.NACCAGE);
 metadata.age_at_collection = normalize(metadata.age_at_collection);
-metadata.NACCBMI = normalize(log10(metadata.NACCBMI));
-metadata.mapped_species_reads = normalize(log10(metadata.mapped_species_reads));
+
+metadata.NACCBMI = normalize(log(metadata.NACCBMI));
+% metadata.NACCBMI = fillmissing(metadata.NACCBMI,"knn",5);
+
+metadata.EDUC = normalize(log(metadata.EDUC));
+metadata.NACCMOCA = normalize(log(metadata.NACCMOCA));
+metadata.mapped_species_reads = normalize(log(metadata.mapped_species_reads));
 
 % Process AD data
 metadata.AD = categorical(metadata.AD,{'AD','no_AD'});
 
 
 % Think about the following:
-dchacSampsToRm = {'X42510869','X42754461','X42547915','X4262232'};
-preparedInputTable.("DM_dchac[bc]")(matches(preparedInputTable.ID,dchacSampsToRm)) = nan;
+%dchacSampsToRm = {'X42510869','X42754461','X42547915','X4262232'};
+%preparedInputTable.("DM_dchac[bc]")(matches(preparedInputTable.ID,dchacSampsToRm)) = nan;
 
 preparedMetadata = metadata;
 
