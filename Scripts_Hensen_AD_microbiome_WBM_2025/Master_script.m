@@ -59,6 +59,11 @@ if ~isfolder(paths.metadataOutputFolder); mkdir(paths.metadataOutputFolder); end
 paths.metadataSummaryStats = fullfile(paths.metadataOutputFolder,'metadataSummaryStats.xlsx');
 paths.mappingSummaryStats = fullfile(paths.metadataOutputFolder,'microbiomeMappingSummaryStats.xlsx');
 
+% Set outputs for the statistical results
+paths.apoe = fullfile(paths.outputs,'APOE');
+paths.cognition = fullfile(paths.outputs,'cognition');
+paths.AD = fullfile(paths.outputs,'AD');
+
 if 0
     % Find current folders and remove all outputs except for the modelling data
     foldersToRm = setdiff({dir(paths.outputs).name}, {'fluxes','microbiome','Knirps','ResultMARS','ResultMARS_NEW','resultMgPipe','Sneezy','logFile_initialisation.txt','.','..'});
@@ -154,7 +159,13 @@ groupsummary(metadataProcessed,'NACCUDSD')
 % medication. Remove samples if almost non of the
 % individuals have a yes for these metadata.)
 [metadataPruned, metadataIntermedPruning] = pruneMetadataADRC(metadataProcessed);
+
 %%
+% Number of samples with BMI information
+tst = metadataPruned(~isnan(metadataPruned.NACCBMI),:);
+groupsummary(metadataPruned(~isnan(metadataPruned.NACCBMI),:),'NACCUDSD')
+%%
+
 % Save updated metadata file with technical co-variate information
 writetable(metadataPruned,paths.metadataProcessed)
 
@@ -207,41 +218,6 @@ if ~isfolder(paths.fluxAnalysis)
     disp('Extract microbial abundances and shadow prices')
     extractMicrobeContributionsADRC(paths.FBA, paths.fluxAnalysis);
 
-    if 0
-        fbaDir = paths.FBA;
-        saveDir = paths.fluxes;
-        bootSamp = 10000;
-    
-        poolobj = gcp('nocreate');
-        if isempty(poolobj); parpool(feature('numCores')); end
-    
-        % Extract diet reaction reduced cost values
-        disp('Extract diet reaction reduced cost values')
-        tic
-        dietSensFolder = getDietSensitivity(fbaDir, saveDir);
-        toc
-        % Calculate the mean average reduced cost value and 95% CI using
-        % bootstrapping
-        disp('Calculate the bootstrapped mean average reduced cost for each objective and diet reaction')
-        tic
-        bootMeanTable = getDietRCstats(dietSensFolder, bootSamp);
-        toc
-
-        % Convert diet reaction names to metabolite names via VMH database lookup
-        database = loadVMHDatabase().metabolites;
-        dietMets = erase(bootMeanTable.('Diet reaction'), {'Diet_EX_', '[d]'});
-        
-        [uniqueMets, ~, idx] = unique(dietMets);
-        metNames = repmat({'NA'}, size(uniqueMets));
-        [~, ia, ib] = intersect(uniqueMets, database(:,1));
-        metNames(ia) = database(ib, 2);
-        
-        bootMeanTable.('Diet metabolite name') = renamecats(categorical(dietMets), uniqueMets, metNames);
-
-        % Save results
-        paths.dietSensStats = fullfile(paths.fluxes,'diet_redCost_sampleMean_stats.csv');
-        writetable(bootMeanTable, paths.dietSensStats) % Write results to file
-    end
 end
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -348,9 +324,6 @@ writetable(diversityStats,paths.mappingSummaryStats,'WriteRowNames',true,'WriteM
 clearvars -except paths; clc; close all;
 
 % Create new empty folders for results on APOE, cognition, and AD progression
-paths.apoe = fullfile(paths.outputs,'APOE');
-paths.cognition = fullfile(paths.outputs,'cognition');
-paths.AD = fullfile(paths.outputs,'AD');
 newFolders = {paths.apoe, paths.cognition, paths.AD};
 
 % Create empty folder for results
@@ -374,6 +347,13 @@ end
 % Load and prepare input data and metadata
 [preparedInputTable, preparedMetadata] = prepareDataForStatsADRC(paths.fluxPath, paths.metadataPrunedProcessed,false);
 %preparedMetadata.(param.response) = renamecats( preparedMetadata.(param.response) ,dementiaCats,{'Healthy controls','MCI','AD dementia'});
+
+% Number of samples with BMI information
+tst = preparedMetadata(~isnan(preparedMetadata.NACCBMI),:);
+groupsummary(preparedMetadata(~isnan(preparedMetadata.NACCBMI),:),'NACCUDSD')
+
+tst = preparedMetadata(~isnan(preparedMetadata.NACCBMI),:);
+groupsummary(preparedMetadata(~isnan(preparedMetadata.NACCBMI),:),'NACCUDSD')
 
 % State confounders
 paths.adConfounders = {'Sex','age_at_collection','mapped_species_reads','lane','Ethanol_added'};
@@ -597,17 +577,25 @@ paths.adFluxAssociatedMicrobes = microbesToTest';
 % Associated relative abundances of microbes to APOE status
 [preparedInputTable, preparedMetadata] = prepareDataForStatsADRC(paths.mappedMicrobePath, paths.metadataPrunedProcessed, true); % Load microbiome read data
 
+%%
+
+% How many BMI samples were available
+
+
+%%
+
+if 0 
 preparedInputTable = preparedInputTable(:,[{'ID'},paths.adFluxAssociatedMicrobes]); % Filter on microbes of interest
 %preparedInputTable(:,2:end) = fillmissing(preparedInputTable(:,2:end),'constant',0); % Do I need this?
-
-if 0
-    paths.adConfounders = {'Sex','age_at_collection','NACCBMI','EDUC','APOE_E4','lane','mapped_species_reads','Ethanol_added'}; 
-else
-    paths.adConfounders = {'Sex','age_at_collection','NACCBMI','EDUC','APOE_E4','lane','mapped_species_reads','Ethanol_added'}; 
 end
-
+paths.adConfounders = {'Sex','age_at_collection','lane','mapped_species_reads','Ethanol_added'}; 
+paths.adConfounders = {'Sex','age_at_collection','EDUC','NACCBMI','mapped_species_reads','lane','Ethanol_added','APOE_E4'};
+if 0
+metadata.NACCBMI = fillmissing(preparedMetadata.NACCBMI,"knn",5);
+preparedMetadata.EDUC = fillmissing(preparedMetadata.EDUC,"knn",5);
+end
 % Test if the flux associated microbes individually associate with the cognitive scores
-%preparedInputTable = preparedInputTable(:,{'ID','Bacteroides_thetaiotaomicron'});
+preparedInputTable = preparedInputTable(:,{'ID','Bacteroides_thetaiotaomicron','Bacteroides_uniformis'});
 [results_AD_microbe, paths.adMicrobesOfInterest, results_DM_microbe, regressions_DM_microbe] = alzheimerAnalysis(preparedInputTable,preparedMetadata,'Flux',paths.adConfounders);
 
 % Create regression table for figure with microbes:
@@ -637,6 +625,46 @@ filePath = fullfile(paths.AD,'AD_progression_results.xlsx');
 writetable(resTableMicrobesAD,adRegTabSumPath,'Sheet','Microbes')
 writetable(results_DM_microbe,filePath,'Sheet','Microbes')
 exportgraphics(fig,adMicrobeBoxPlotPath,'Resolution',300)
+%%
+
+% Investigate whether these two microbial species also associate with
+% cognitive status in the raw gut microbiome datasets. Are the results
+% robust after mapping?
+[~, preparedMetadata] = prepareDataForStatsADRC(paths.mappedMicrobePath, paths.metadataPrunedProcessed, true); % Load microbiome read data
+
+microbiome = rows2vars(readtable(paths.microbiotaPath,'ReadRowNames',true),'VariableNamingRule','preserve');
+microbiome = renamevars(microbiome,'OriginalVariableNames','ID');
+microbiome = microbiome(:,{'ID','Bacteroides_thetaiotaomicron','Bacteroides_uniformis'});
+microbiome = convertvars(microbiome,{'Bacteroides_thetaiotaomicron','Bacteroides_uniformis'},@normalize);
+
+% Perform regressions
+[results_AD_microbe_raw, microbesOfInterest, results_DM_microbe_raw, regressions_DM_microbe_raw] = alzheimerAnalysis(microbiome,preparedMetadata,'Flux',paths.adConfounders);
+
+% Set function parameters
+param.response = "NACCUDSD"; param.titleAnnotation = " relative abundances"; param.yTitle = {'Z-scaled','relative abundance'}; param.addEmptyTile=false;
+param.italicTitle = true;
+% Prepare metadata for visualisation
+preparedMetadata.(param.response) = categorical(preparedMetadata.(param.response),{'Healthy controls','MCI','AD dementia'});
+
+% Create tiled figure
+close all; fig = figure('Position',[686,152.3333,1231,411.6667]);
+tiledlayout(1,length(microbesOfInterest),'TileSpacing','tight','Padding','loose');
+createMultipleBoxPlotsADRC(microbiome, preparedMetadata, microbesOfInterest, results_DM_microbe_raw, param);
+
+% Generate paths to save results
+adMicrobeBoxPlotPath = fullfile(paths.figures,'premapped_adMicrobeBoxPlot.png');
+adRegTabSumPath = fullfile(paths.AD,'AD_RegressionTableSummary.xlsx');
+filePath = fullfile(paths.AD,'AD_progression_results.xlsx');
+
+% Write results to file
+writetable(resTableMicrobesAD,adRegTabSumPath,'Sheet','premapped_Microbes')
+writetable(results_DM_microbe,filePath,'Sheet','premapped_Microbes')
+exportgraphics(fig,adMicrobeBoxPlotPath,'Resolution',600)
+
+
+%%
+
+
 %%
 
 % Microbe associations with APOE %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -836,15 +864,24 @@ mergedTaxa = mergedTaxa(matches(mergedTaxa.("Microbial species"),microbiomeFiltN
 % Collect summary statistics on phylum-level mapping effects
 summaryMerged = collectPhylumStatsADRC(microbiotaPath, taxonomyPath, microbiotaWbmPath);
 
+% Load the unmapped characterised microbial taxa and their increase in read
+% coverage if mapped
+
+unmappedCharTaxaPath = fullfile(paths.outputs,'ResultMars','metrics','Species','potential_higher_readCov_when_mapping_more_microbes.xlsx');
+unmappedCharTaxa = readtable(unmappedCharTaxaPath,'Sheet','characterised_taxa');
+unmappedCharTaxa = removevars(unmappedCharTaxa, {'potential_Incr','minimum','maximum','non_zero_count'});
+unmappedCharTaxa = renamevars(unmappedCharTaxa,{'Taxon','mean','SD','curr_readCov','potential_readCov','cumIncrease'},{'Unmapped microbial species','Mean relative abundance','Standard deviation relative abundance','Current mapped read coverage','Read coverage if taxa was mapped','Cumulative increase in read mapping coverage'});
+
 % Save summary statistics to table
 description = cell(2,1); 
 description{1} = 'Mean relative abundances of mapped and unmapped microbial phyla and species'; % Header
 description{2} = ['Left table: Microbial species mapping status and mean (SD) relative abundances across the cohort. ',...
-    'Right table: Microbial phylum-level mean (SD) relative abundances across the cohort for the total, mapped, and unmapped microbial species.']; % Details
+    'Middle table: Microbial phylum-level mean (SD) relative abundances across the cohort for the total, mapped, and unmapped microbial species.',...
+    'Right table: Unmapped, but fully characterised microbial species and the increase in mapping coverage if they were mapped.']; % Details
 folder = paths.outputs;
 suplTable = mergedTaxa;
-writeSupplementADRC(mergedTaxa, description, paths.outputs, summaryMerged)
-
+writeSupplementADRC(mergedTaxa, description, paths.outputs, summaryMerged, unmappedCharTaxa)
+%%
 
 %%%% Microbiome-WBM content statistics ->
 
@@ -955,4 +992,50 @@ description{1} = ['Left table: ANCOVA regression table for APOE status (E2 versu
 description{2} = 'Both the ANCOVA and linear regressions were performed on healthy individuals for flux predictions of metabolites with altered fluxes in AD patients compared to controls';
 writeSupplementADRC(fluxapoeRegressionTable, description, paths.outputs, fluxMocaRegressionTable)
 
+
+%%% Flux sensitivity upon dietary changes %%%
+
+% Obtain flus sensitivity statistics
+
+fbaDir = paths.FBA;
+saveDir = paths.fluxes;
+bootSamp = 10000;
+
+poolobj = gcp('nocreate');
+if isempty(poolobj); parpool(feature('numCores')); end
+
+% Extract diet reaction reduced cost values
+disp('Extract diet reaction reduced cost values')
+tic
+dietSensFolder = getDietSensitivity(fbaDir, saveDir);
+toc
+% Calculate the mean average reduced cost value and 95% CI using
+% bootstrapping
+disp('Calculate the bootstrapped mean average reduced cost for each objective and diet reaction')
+tic
+bootMeanTable = getDietRCstats(dietSensFolder, bootSamp);
+toc
+
+% Convert diet reaction names to metabolite names via VMH database lookup
+database = loadVMHDatabase().metabolites;
+dietMets = erase(bootMeanTable.('Diet reaction'), {'Diet_EX_', '[d]'});
+
+[uniqueMets, ~, idx] = unique(dietMets);
+metNames = repmat({'NA'}, size(uniqueMets));
+[~, ia, ib] = intersect(uniqueMets, database(:,1));
+metNames(ia) = database(ib, 2);
+
+bootMeanTable.('Diet metabolite name') = renamecats(categorical(dietMets), uniqueMets, metNames);
+
+% Save tables to supplementary file
+description = cell(2,1); 
+description{1} = ['Mean reduced cost values for each pair of dietary reactions and demand reaction objectives in the cohort. ',...
+'Mean average robust cost values across all samples with corresponding 95% confidence intervals and P-values indicating whether the mean robust cost value is non-zero on average. The 95% confidence intervals and P-values were estimated by bootstrapping using 10,000 random samples with replacement.']; % Header
+description{2} = '';
+writeSupplementADRC(bootMeanTable, description, paths.outputs)
+
+
+% Save results
+paths.dietSensStats = fullfile(paths.fluxes,'diet_redCost_sampleMean_stats.csv');
+writetable(bootMeanTable, paths.dietSensStats) % Write results to file
 %%% END OF FILE %%%
