@@ -14,7 +14,7 @@
 clear;clc;
 restoredefaultpath
 addpath(genpath('/home/tim/Documents/CodeBase'))
-addpath(genpath('/home/tim/Documents/ADRC/'))
+addpath(genpath('/run/user/1000/gvfs/smb-share:server=192.168.0.129,share=sambashare/PhD/ADRC'))
 addpath(genpath('/home/tim/Documents/cobratoolbox'))
 addpath(genpath('/home/tim/Documents/wbm_modelingcode'))
 
@@ -22,9 +22,9 @@ addpath(genpath('/home/tim/Documents/wbm_modelingcode'))
 
 % Set paths for analysis
 paths = struct;
-paths.root = what('ADRC').path; % Set working directory
+paths.root = what('/run/user/1000/gvfs/smb-share:server=192.168.0.129,share=sambashare/PhD/ADRC').path; % Set working directory
 paths.inputs = fullfile(paths.root,'inputs');
-paths.outputs = fullfile(what('ADRC').path,'outputs'); % Set directory to save analysis results
+paths.outputs = fullfile(paths.root,'outputs'); % Set directory to save analysis results
 
 % Set paths for new flux outputs
 paths.fluxes = fullfile(paths.outputs,'fluxes');
@@ -359,7 +359,7 @@ groupsummary(preparedMetadata(~isnan(preparedMetadata.NACCBMI),:),'NACCUDSD')
 % State confounders
 paths.adConfounders = {'Sex','age_at_collection','mapped_species_reads','lane','Ethanol_added'};
 
-if 1
+if 0
     % dchacSampsToRm = {'X42510869','X42754461','X42547915','X4262232'};
 %    dchacSampsToRm =  {'X4273975'
 % 'X42409516'
@@ -547,7 +547,7 @@ param.rxnsOfInterest = paths.rxnsOfInterest;
 param.bootSamp = 1e4; % Boot samples for obtaining the mean and 95%CI of microbe contribution potentials
 param.minFreq = 0.9;
 param.nBootLasso = 500;
-param.enBoot = 1e5; % Elastic net bootstrap samples 
+param.enBoot = 5e4;%1e5; % Elastic net bootstrap samples 
 
 paths.shadowPriceDir = fullfile(paths.fluxAnalysis,'biomass_shadow_prices'); % Folder with pan microbe biomass shadow prices 
 shadowPriceDir = paths.shadowPriceDir;

@@ -171,8 +171,9 @@ microbeContributionStats{2} = getMeanSDNumMicrobes(fluxMicrobeData);
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 % Identify relevant features
+tic
 [enetTab, elasticNetStats] = elasticNetMicrobeWeights(fluxMicrobeData, enBoot);
-
+toc
 elasticNetResults = vertcat(enetTab{:});
 elasticNetResults = renamevars(elasticNetResults,'Metabolite','Reaction');
 elasticNetResults = addvars(elasticNetResults, renameAdrcVmhToMetName(elasticNetResults.Reaction),'NewVariableNames','Metabolite','After','Reaction');
@@ -416,7 +417,7 @@ enet_stats = cellfun(@(x) array2table(zeros(1,length(varNames)),'VariableNames',
 lasso(predictors{1}, responses{1}, 'CV',10,'Intercept',false,'Standardize',false,'Alpha',alpha);
 lasso(predictors{2}, responses{2}, 'CV',10,'Intercept',false,'Standardize',false,'Alpha',alpha);
 
-parfor i=1:numMets
+for i=1:numMets
     % Get predictor and response vars for metabolite i
     pred = predictors{i};
     resp = responses{i};
@@ -427,8 +428,10 @@ parfor i=1:numMets
     X = pred(~nanSamples,:);
 
     if 1 
+        fprintf( append('Elastic net regressions on reaction ', char(string(i)),' \n' ) )
+        tic
         [coef, se, ci, t_stat, p_val, MSE, DF, LambdaMinMSE, SST, SSR, R2] = perfBootEnet(X, y , enBoot);
-
+        toc
         % Add regression statistics
         enetTab{i}.Beta = coef;
         enetTab{i} = addvars(enetTab{i}, ci(:,1), ci(:,2), se, t_stat, p_val,  repmat(enBoot, length(coef),1), 'NewVariableNames', {'2.5% CI','97.5% CI', 'SE','tStat','pVal','enBoot'});
